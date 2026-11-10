@@ -3,9 +3,7 @@
   "short_name": "Resort",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f6f4ee",
-  "theme_color": "#1f5f4a",
-  "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
-  ]
+  "background_color": "#f4f0ea",
+  "theme_color": "#093e44",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
 }
