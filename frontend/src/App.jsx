@@ -1,68 +1,92 @@
-import { useEffect, useState } from 'react';
-import Login from './components/Login.jsx';
-import Items from './components/Items.jsx';
-import Chat from './components/Chat.jsx';
+import { useEffect, useState, useCallback } from 'react';
+import { api, getToken, setToken, flushPending } from './api.js';
 import { enablePush } from './push.js';
+import Login from './pages/Login.jsx';
+import Rooms from './pages/Rooms.jsx';
+import Bookings from './pages/Bookings.jsx';
+import Today from './pages/Today.jsx';
+import Chat from './pages/Chat.jsx';
+import Users from './pages/Users.jsx';
+import Reports from './pages/Reports.jsx';
+
+// What each role can see in the sidebar
+const NAV = {
+  admin: [['rooms', 'Rooms'], ['bookings', 'Bookings'], ['users', 'Users'], ['reports', 'Reports']],
+  staff: [['rooms', 'Rooms'], ['bookings', 'Bookings'], ['today', 'Today'], ['chat', 'Chat']],
+  guest: [['rooms', 'Rooms'], ['bookings', 'Bookings'], ['chat', 'Chat']],
+};
+const TITLES = { rooms: 'Rooms', bookings: 'Bookings', today: "Today's Check-in / Check-out", chat: 'Chat', users: 'Staff Accounts', reports: 'Reports' };
+const ROLE_LABEL = { admin: 'Admin', staff: 'Staff', guest: 'Guest' };
 
 export default function App() {
-  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('user') || 'null'));
-  const [page, setPage] = useState('items');
-  const [online, setOnline] = useState(navigator.onLine);
-  const [notice, setNotice] = useState('');
+  const [user, setUser] = useState(null);
+  const [ready, setReady] = useState(!getToken());
+  const [page, setPage] = useState('rooms');
+  const [toast, setToast] = useState('');
+  const [headerAction, setHeaderAction] = useState(null);
+
+  const notice = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(''), 3500); }, []);
 
   useEffect(() => {
-    const on = () => setOnline(true);
-    const off = () => setOnline(false);
-    window.addEventListener('online', on);
-    window.addEventListener('offline', off);
-    return () => {
-      window.removeEventListener('online', on);
-      window.removeEventListener('offline', off);
-    };
+    if (!getToken()) return;
+    api('/auth/me').then(setUser).catch((e) => { if (e.status) setToken(null); }).finally(() => setReady(true));
   }, []);
 
-  function handleLogin({ token, user }) {
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
-    setUser(user);
-  }
+  // Send bookings that were saved while offline
+  useEffect(() => {
+    if (!user) return;
+    const run = async () => { const n = await flushPending(); if (n) { notice(`${n} offline booking(s) synced`); setPage('bookings'); } };
+    run();
+    window.addEventListener('online', run);
+    const onMsg = (e) => e.data?.type === 'flush-bookings' && run();
+    navigator.serviceWorker?.addEventListener('message', onMsg);
+    return () => { window.removeEventListener('online', run); navigator.serviceWorker?.removeEventListener('message', onMsg); };
+  }, [user, notice]);
 
-  function logout() {
-    localStorage.clear();
-    setUser(null);
-  }
+  if (!ready) return null;
+  if (!user) return <Login onLogin={(u, t) => { setToken(t); setUser(u); setPage('rooms'); }} />;
 
-  async function turnOnPush() {
-    try {
-      await enablePush();
-      setNotice('Notifications enabled');
-    } catch (e) {
-      setNotice(e.message);
-    }
-  }
+  const logout = () => { setToken(null); setUser(null); };
+  const items = NAV[user.role] || NAV.guest;
+  const props = { user, notice, setHeaderAction };
 
-  if (!user) return <Login onLogin={handleLogin} />;
+  const bell = async () => {
+    try { await enablePush(); notice('Notifications enabled'); } catch (e) { notice(e.message); }
+  };
 
   return (
-    <div className="shell">
+    <div className="layout">
       <aside className="sidebar">
-        <h1>Resort System</h1>
+        <div className="brand"><img src="/icon.svg" alt="" width="34" height="34" /><span>Resort</span></div>
         <nav>
-          <button className={page === 'items' ? 'active' : ''} onClick={() => setPage('items')}>
-            Items
-          </button>
-          <button className={page === 'chat' ? 'active' : ''} onClick={() => setPage('chat')}>
-            Chat
-          </button>
+          {items.map(([key, label]) => (
+            <button key={key} className={page === key ? 'active' : ''} onClick={() => { setHeaderAction(null); setPage(key); }}>{label}</button>
+          ))}
         </nav>
-        <div className="sidebar-foot">
-          <span className={online ? 'dot on' : 'dot off'}>{online ? 'Online' : 'Offline'}</span>
-          <button className="ghost" onClick={turnOnPush}>Enable notifications</button>
-          <button className="ghost" onClick={logout}>Log out ({user.name})</button>
-          {notice && <small>{notice}</small>}
+        <div className="me">
+          <strong>{user.name}</strong>
+          {user.name.toLowerCase() !== ROLE_LABEL[user.role].toLowerCase() && <span>{ROLE_LABEL[user.role]}</span>}
+          <button className="ghost-light" onClick={logout}>Log out</button>
         </div>
       </aside>
-      <main>{page === 'items' ? <Items /> : <Chat user={user} />}</main>
+      <main className="content">
+        <header>
+          <h1>{TITLES[page]}</h1>
+          <div className="header-actions">
+            {headerAction}
+            <button className="bell" title="Enable notifications" onClick={bell} aria-label="Enable notifications">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>
+            </button>
+          </div>
+        </header>
+        {page === 'rooms' && <Rooms {...props} />}
+        {page === 'bookings' && <Bookings {...props} />}
+        {page === 'today' && user.role === 'staff' && <Today {...props} />}
+        {page === 'chat' && user.role !== 'admin' && <Chat {...props} />}
+        {page === 'users' && user.role === 'admin' && <Users {...props} />}
+        {page === 'reports' && user.role === 'admin' && <Reports {...props} />}
+      </main>
+      {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }

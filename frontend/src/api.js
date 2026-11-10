@@ -1,44 +1,52 @@
-import { openDB } from 'idb';
+import { queueBooking, pendingBookings, removePending } from './db.js';
 
-export const getToken = () => localStorage.getItem('token');
+const KEY = 'resort_token';
+export const getToken = () => localStorage.getItem(KEY);
+export const setToken = (t) => (t ? localStorage.setItem(KEY, t) : localStorage.removeItem(KEY));
 
-export async function api(path, options = {}) {
-  const res = await fetch(`/api${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
+export async function api(path, { method = 'GET', body } = {}) {
+  const res = await fetch('/api' + path, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...(getToken() ? { Authorization: 'Bearer ' + getToken() } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'May error');
+  let data = null;
+  try { data = await res.json(); } catch {}
+  if (!res.ok) {
+    const e = new Error((data && data.error) || 'Request failed');
+    e.status = res.status;
+    throw e;
+  }
   return data;
 }
 
-// ---------- Offline outbox (IndexedDB) ----------
-const dbPromise = openDB('pwa-db', 1, {
-  upgrade(db) {
-    db.createObjectStore('outbox', { keyPath: 'id', autoIncrement: true });
-  },
-});
-
-export async function createItemOfflineAware(item) {
-  if (navigator.onLine) {
-    try {
-      await api('/items', { method: 'POST', body: item });
-      return { queued: false };
-    } catch (err) {
-      if (!(err instanceof TypeError)) throw err; // network error lang ang i-queue
+// Create a booking; if offline, keep it in IndexedDB and sync later.
+export async function createBooking(booking) {
+  try {
+    return { booking: await api('/bookings', { method: 'POST', body: booking }), queued: false };
+  } catch (e) {
+    if (e.status) throw e; // server answered with an error
+    await queueBooking(booking);
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      if (reg.sync) reg.sync.register('sync-bookings').catch(() => {});
     }
+    return { booking: null, queued: true };
   }
-  const db = await dbPromise;
-  await db.add('outbox', { url: '/api/items', method: 'POST', body: item, token: getToken() });
-  const reg = await navigator.serviceWorker.ready;
-  if ('sync' in reg) await reg.sync.register('sync-items');
-  return { queued: true };
 }
 
-export async function pendingCount() {
-  return (await dbPromise).count('outbox');
+export async function flushPending() {
+  let sent = 0;
+  for (const b of await pendingBookings()) {
+    const { localId, ...payload } = b;
+    try {
+      await api('/bookings', { method: 'POST', body: payload });
+      await removePending(localId);
+      sent++;
+    } catch (e) {
+      if (e.status) await removePending(localId); // rejected by the server (e.g. dates taken): drop it
+      else break; // still offline
+    }
+  }
+  return sent;
 }

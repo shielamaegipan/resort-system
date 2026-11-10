@@ -1,50 +1,48 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
-import { api, getToken } from '../api.js';
+import { api, getToken } from '../api';
 
 export default function Chat({ user }) {
-  const [messages, setMessages] = useState([]);
+  const [msgs, setMsgs] = useState([]);
   const [text, setText] = useState('');
-  const socketRef = useRef(null);
-  const endRef = useRef(null);
+  const sock = useRef(null);
+  const end = useRef(null);
 
   useEffect(() => {
-    api('/messages').then(setMessages).catch(() => {});
-    const socket = io({ auth: { token: getToken() } });
-    socketRef.current = socket;
-    socket.on('chat:receive', (m) => setMessages((prev) => [...prev, m]));
-    return () => socket.disconnect();
+    api('/messages').then(setMsgs).catch(() => {});
+    const s = io({ auth: { token: getToken() } });
+    sock.current = s;
+    s.on('chat:receive', (m) => setMsgs((prev) => [...prev, m]));
+    return () => s.disconnect();
   }, []);
 
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages]);
+  useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
 
-  function send() {
+  const send = (e) => {
+    e.preventDefault();
     if (!text.trim()) return;
-    socketRef.current.emit('chat:send', text);
+    sock.current.emit('chat:send', text);
     setText('');
-  }
+  };
 
   return (
-    <section className="chat">
-      <h2>Chat</h2>
-      <div className="messages">
-        {messages.map((m) => (
-          <div key={m.id} className={m.sender_id === user.id ? 'msg mine' : 'msg'}>
-            <small>{m.sender_name}</small>
-            <p>{m.content}</p>
-          </div>
-        ))}
-        <div ref={endRef} />
+    <>
+      <h2 className="title">Chat</h2>
+      <div className="card chat">
+        <div className="msgs">
+          {msgs.map((m) => (
+            <div key={m.id} className={'msg ' + (m.sender_id === user.id ? 'mine' : '')}>
+              <small>{m.sender_name}</small>
+              <div>{m.content}</div>
+            </div>
+          ))}
+          <div ref={end} />
+        </div>
+        <form className="row" onSubmit={send}>
+          <input style={{ flex: 1 }} placeholder="Type a message..." value={text} onChange={(e) => setText(e.target.value)} />
+          <button className="primary">Send</button>
+        </form>
       </div>
-      <div className="row">
-        <input
-          placeholder="Write a message"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && send()}
-        />
-        <button onClick={send}>Send</button>
-      </div>
-    </section>
+    </>
   );
 }

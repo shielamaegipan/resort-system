@@ -1,36 +1,36 @@
 import { useState } from 'react';
-import { api } from '../api.js';
+import { api } from '../api';
 
 export default function Login({ onLogin }) {
-  const [mode, setMode] = useState('login');
+  const [register, setRegister] = useState(false);
   const [f, setF] = useState({ name: '', email: '', password: '' });
-  const [error, setError] = useState('');
-
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
-  async function submit() {
-    setError('');
+  const submit = async (e) => {
+    e.preventDefault();
+    setErr(''); setBusy(true);
     try {
-      const data = await api(`/auth/${mode}`, { method: 'POST', body: f });
-      onLogin(data);
-    } catch (e) {
-      setError(e.message);
-    }
-  }
+      onLogin(await api(register ? '/auth/register' : '/auth/login', { method: 'POST', body: f }));
+    } catch (e2) {
+      setErr(e2.message === 'Failed to fetch' ? 'Cannot reach the server. Is the backend running?' : e2.message);
+    } finally { setBusy(false); }
+  };
 
   return (
-    <div className="login">
-      <div className="panel">
-        <h1>{mode === 'login' ? 'Log in' : 'Create account'}</h1>
-        {mode === 'register' && <input placeholder="Name" value={f.name} onChange={set('name')} />}
-        <input placeholder="Email" type="email" value={f.email} onChange={set('email')} />
-        <input placeholder="Password" type="password" value={f.password} onChange={set('password')} />
-        {error && <p className="error">{error}</p>}
-        <button onClick={submit}>{mode === 'login' ? 'Log in' : 'Create account'}</button>
-        <button className="ghost" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>
-          {mode === 'login' ? 'Need an account? Register' : 'Have an account? Log in'}
+    <div className="center">
+      <form className="card auth" onSubmit={submit}>
+        <h2>{register ? 'Register' : 'Log in'}</h2>
+        {register && <input placeholder="Full name" value={f.name} onChange={set('name')} required />}
+        <input type="email" placeholder="Email" value={f.email} onChange={set('email')} required />
+        <input type="password" placeholder="Password" value={f.password} onChange={set('password')} required />
+        {err && <p className="err">{err}</p>}
+        <button className="primary" disabled={busy}>{register ? 'Create account' : 'Log in'}</button>
+        <button type="button" className="ghost" onClick={() => { setRegister(!register); setErr(''); }}>
+          {register ? 'Already have an account? Log in' : 'Need an account? Register'}
         </button>
-      </div>
+      </form>
     </div>
   );
 }
