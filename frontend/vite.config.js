@@ -8,12 +8,14 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': target,
+      '/uploads': target,
       '/socket.io': { target, ws: true },
     },
   },
   preview: {
     proxy: {
       '/api': target,
+      '/uploads': target,
       '/socket.io': { target, ws: true },
     },
   },
