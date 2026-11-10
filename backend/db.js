@@ -8,4 +8,5 @@ module.exports = mysql.createPool({
   database: process.env.DB_NAME,
   waitForConnections: true,
   connectionLimit: 10,
+  dateStrings: true, // DATE columns are returned as 'YYYY-MM-DD'
 });
