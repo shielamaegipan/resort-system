@@ -1,0 +1,136 @@
+12:06:06 AM [vite] (client) Pre-transform error: Failed to resolve import "./pages/Dashboard.jsx" from "src/App.jsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/johnf/Herd/resort-system/frontend/src/App.jsx:5:22
+  20 |  import { enablePush } from "./push.js";
+  21 |  import Login from "./pages/Login.jsx";
+  22 |  import Dashboard from "./pages/Dashboard.jsx";
+     |                         ^
+  23 |  import Rooms from "./pages/Rooms.jsx";
+  24 |  import Bookings from "./pages/Bookings.jsx";
+12:08:10 AM [vite] Internal server error: Failed to resolve import "./pages/Dashboard.jsx" from "src/App.jsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/johnf/Herd/resort-system/frontend/src/App.jsx:5:22
+  20 |  import { enablePush } from "./push.js";
+  21 |  import Login from "./pages/Login.jsx";
+  22 |  import Dashboard from "./pages/Dashboard.jsx";
+     |                         ^
+  23 |  import Rooms from "./pages/Rooms.jsx";
+  24 |  import Bookings from "./pages/Bookings.jsx";
+      at TransformPluginContext._formatLog (file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-Cohbwjf9.js:42852:41)
+      at TransformPluginContext.error (file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-Cohbwjf9.js:42849:16)
+      at normalizeUrl (file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-Cohbwjf9.js:40826:23)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-Cohbwjf9.js:40945:37
+      at async Promise.all (index 7)
+      at async TransformPluginContext.transform (file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-Cohbwjf9.js:40872:7)
+      at async EnvironmentPluginContainer.transform (file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-Cohbwjf9.js:42647:18)
+      at async loadAndTransform (file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-Cohbwjf9.js:36059:27)
+      at async viteTransformMiddleware (file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-Cohbwjf9.js:37556:24)
+12:08:51 AM [vite] Internal server error: Failed to resolve import "./pages/StaffDashboard.jsx" from "src/App.jsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/johnf/Herd/resort-system/frontend/src/App.jsx:12:27
+  27 |  import Users from "./pages/Users.jsx";
+  28 |  import Reports from "./pages/Reports.jsx";
+  29 |  import StaffDashboard from "./pages/StaffDashboard.jsx";
+     |                              ^
+  30 |  import RoomAvailability from "./pages/RoomAvailability.jsx";
+  31 |  import CashPayments from "./pages/CashPayments.jsx";
+      at TransformPluginContext._formatLog (file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-Cohbwjf9.js:42852:41)
+      at TransformPluginContext.error (file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-Cohbwjf9.js:42849:16)
+      at normalizeUrl (file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-Cohbwjf9.js:40826:23)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-Cohbwjf9.js:40945:37
+      at async Promise.all (index 14)
+      at async TransformPluginContext.transform (file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-Cohbwjf9.js:40872:7)
+      at async EnvironmentPluginContainer.transform (file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-Cohbwjf9.js:42647:18)
+      at async loadAndTransform (file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-Cohbwjf9.js:36059:27)
+12:08:51 AM [vite] (client) Pre-transform error: Failed to resolve import "./pages/StaffDashboard.jsx" from "src/App.jsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/johnf/Herd/resort-system/frontend/src/App.jsx:12:27
+  27 |  import Users from "./pages/Users.jsx";
+  28 |  import Reports from "./pages/Reports.jsx";
+  29 |  import StaffDashboard from "./pages/StaffDashboard.jsx";
+     |                              ^
+  30 |  import RoomAvailability from "./pages/RoomAvailability.jsx";
+  31 |  import CashPayments from "./pages/CashPayments.jsx";
+12:08:51 AM [vite] (client) Pre-transform error: Failed to resolve import "./staff.css" from "src/pages/GuestServices.jsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/johnf/Herd/resort-system/frontend/src/pages/GuestServices.jsx:4:7
+  19 |  import { api } from "../api.js";
+  20 |  import { peso } from "./Bookings.jsx";
+  21 |  import "./staff.css";
+     |          ^
+  22 |  export default function GuestServices({ notice }) {
+  23 |    _s();
+12:08:51 AM [vite] (client) Pre-transform error: Failed to resolve import "./staff.css" from "src/pages/AboutResort.jsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/johnf/Herd/resort-system/frontend/src/pages/AboutResort.jsx:1:7
+  15 |    window.$RefreshSig$ = RefreshRuntime.createSignatureFunctionForTransform;
+  16 |  }
+  17 |  import "./staff.css";
+     |          ^
+  18 |  import "./guest.css";
+  19 |  const RESORT = {
+12:08:51 AM [vite] (client) Pre-transform error: Failed to resolve import "./staff.css" from "src/pages/GuestNotifications.jsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/johnf/Herd/resort-system/frontend/src/pages/GuestNotifications.jsx:4:7
+  19 |  import { api } from "../api.js";
+  20 |  import { enablePush } from "../push.js";
+  21 |  import "./staff.css";
+     |          ^
+  22 |  import "./guest.css";
+  23 |  const TEXT = {
+12:08:51 AM [vite] (client) Pre-transform error: Failed to resolve import "./staff.css" from "src/pages/GuestCount.jsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/johnf/Herd/resort-system/frontend/src/pages/GuestCount.jsx:3:7
+  18 |  import { useEffect, useState } from "react";
+  19 |  import { api } from "../api.js";
+  20 |  import "./staff.css";
+     |          ^
+  21 |  const today = () => (/* @__PURE__ */ new Date()).toLocaleDateString("en-CA");
+  22 |  export default function GuestCount({ notice }) {
+12:08:51 AM [vite] (client) Pre-transform error: Failed to resolve import "./staff.css" from "src/pages/CashPayments.jsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/johnf/Herd/resort-system/frontend/src/pages/CashPayments.jsx:4:7
+  19 |  import { api } from "../api.js";
+  20 |  import { peso } from "./Bookings.jsx";
+  21 |  import "./staff.css";
+     |          ^
+  22 |  const today = () => (/* @__PURE__ */ new Date()).toLocaleDateString("en-CA");
+  23 |  export default function CashPayments({ notice }) {
+12:08:51 AM [vite] (client) Pre-transform error: Failed to resolve import "./staff.css" from "src/pages/BookRoom.jsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/johnf/Herd/resort-system/frontend/src/pages/BookRoom.jsx:5:7
+  20 |  import { cacheGet } from "../db.js";
+  21 |  import { peso } from "./Bookings.jsx";
+  22 |  import "./staff.css";
+     |          ^
+  23 |  import "./guest.css";
+  24 |  const today = () => (/* @__PURE__ */ new Date()).toLocaleDateString("en-CA");
+12:08:51 AM [vite] (client) Pre-transform error: Failed to resolve import "./staff.css" from "src/pages/RoomAvailability.jsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/johnf/Herd/resort-system/frontend/src/pages/RoomAvailability.jsx:3:7
+  18 |  import { useEffect, useState } from "react";
+  19 |  import { api } from "../api.js";
+  20 |  import "./staff.css";
+     |          ^
+  21 |  const today = () => (/* @__PURE__ */ new Date()).toLocaleDateString("en-CA");
+  22 |  const STATE = { available: "Available", reserved: "Reserved", occupied: "Occupied", maintenance: "Maintenance" };
+12:08:51 AM [vite] (client) Pre-transform error: Failed to resolve import "./staff.css" from "src/pages/GuestHome.jsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/johnf/Herd/resort-system/frontend/src/pages/GuestHome.jsx:4:7
+  19 |  import { api } from "../api.js";
+  20 |  import { peso, LABEL } from "./Bookings.jsx";
+  21 |  import "./staff.css";
+     |          ^
+  22 |  import "./guest.css";
+  23 |  export default function GuestHome({ user, notice, goTo }) {
+12:08:51 AM [vite] (client) Pre-transform error: Failed to resolve import "./staff.css" from "src/pages/Services.jsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: C:/Users/johnf/Herd/resort-system/frontend/src/pages/Services.jsx:5:7
+  20 |  import { peso } from "./Bookings.jsx";
+  21 |  import { useConfirm } from "../components/Confirm.jsx";
+  22 |  import "./staff.css";
+     |          ^
+  23 |  const empty = { id: null, name: "", price: "", description: "" };
+  24 |  export default function Services({ notice }) {
