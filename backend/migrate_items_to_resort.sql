@@ -2,7 +2,7 @@
 -- Run in phpMyAdmin > SQL tab. It does not touch users, messages or push_subscriptions.
 USE resort_system;
 
-DROP TABLE IF EXISTS items;
+-- Preserve legacy items and their history. This migration never drops them.
 
 CREATE TABLE IF NOT EXISTS rooms (
   id INT AUTO_INCREMENT PRIMARY KEY,
