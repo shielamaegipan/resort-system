@@ -1,0 +1,56 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 1 /Kids [4 0 R] >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 873 >>
+stream
+BT /F1 10 Tf 40 800 Td 15 TL (Resort operational report) Tj
+T* (Period | 2026-11-11 | 2026-11-11) Tj
+T* (Currency | PHP) Tj
+T* (Net revenue | 2400) Tj
+T* (Received | 2500.5) Tj
+T* (Refunds | 100.5) Tj
+T* (Bookings | 2) Tj
+T* (Cancelled | 0) Tj
+T* (No show | 1) Tj
+T* (Cancellation rate \(%\) | 0) Tj
+T* (Occupancy \(%\) | 12.5) Tj
+T* (Room nights | 1) Tj
+T* (Registered guests | 1) Tj
+T* () Tj
+T* (Day | Net revenue | Received | Refunds) Tj
+T* (2026-11-11 | 2400 | 2500.5 | 100.5) Tj
+T* () Tj
+T* (Payment method | Received | Refunds | Net) Tj
+T* (cash | 2500.5 | 100.5 | 2400) Tj
+T* () Tj
+T* (Popular room | Bookings | Room nights) Tj
+T* (Platform test suite | 1 | 1) Tj
+T* () Tj
+T* (Verified funds on verification date, refunds on refund-operation date; Asia/Manila. Booking statistics by) Tj
+T* ( arrival date, occupancy by stay overlap; archived history included.) Tj ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000185 00000 n 
+0000000311 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1235
+%%EOF

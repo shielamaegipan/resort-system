@@ -1,0 +1,24 @@
+﻿"Resort operational report"
+"Period","2026-11-11","2026-11-11"
+"Currency","PHP"
+"Net revenue","2400"
+"Received","2500.5"
+"Refunds","100.5"
+"Bookings","2"
+"Cancelled","0"
+"No show","1"
+"Cancellation rate (%)","0"
+"Occupancy (%)","12.5"
+"Room nights","1"
+"Registered guests","1"
+
+"Day","Net revenue","Received","Refunds"
+"2026-11-11","2400","2500.5","100.5"
+
+"Payment method","Received","Refunds","Net"
+"cash","2500.5","100.5","2400"
+
+"Popular room","Bookings","Room nights"
+"Platform test suite","1","1"
+
+"Verified funds on verification date, refunds on refund-operation date; Asia/Manila. Booking statistics by arrival date, occupancy by stay overlap; archived history included."

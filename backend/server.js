@@ -241,6 +241,37 @@ app.delete('/api/users/:id', auth, allow('admin'), async (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- DASHBOARD (admin only) ----------
+app.get('/api/dashboard', auth, allow('admin'), async (req, res) => {
+  try {
+    const [[rooms]] = await db.query("SELECT COUNT(*) AS total, COALESCE(SUM(status='available'),0) AS available, COALESCE(SUM(status='maintenance'),0) AS maintenance FROM rooms WHERE deleted_at IS NULL");
+    const [[occ]] = await db.query("SELECT COUNT(DISTINCT room_id) AS occupied FROM bookings WHERE deleted_at IS NULL AND status = 'checked_in' AND check_in <= CURDATE() AND check_out > CURDATE()");
+    const [[today]] = await db.query(
+      `SELECT COALESCE(SUM(check_in = CURDATE() AND status IN ('pending','confirmed','checked_in')),0) AS arrivals,
+              COALESCE(SUM(check_out = CURDATE() AND status = 'checked_in'),0) AS departures
+       FROM bookings WHERE deleted_at IS NULL`
+    );
+    const [[pending]] = await db.query("SELECT COUNT(*) AS n FROM bookings WHERE deleted_at IS NULL AND status = 'pending'");
+    const [[month]] = await db.query(
+      `SELECT COALESCE(SUM(total_price),0) AS revenue, COUNT(*) AS bookings FROM bookings
+       WHERE deleted_at IS NULL AND status IN ('confirmed','checked_in','checked_out')
+         AND DATE_FORMAT(check_in, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m')`
+    );
+    const [[usr]] = await db.query("SELECT COALESCE(SUM(role='staff'),0) AS staff, COALESCE(SUM(role='guest'),0) AS guests FROM users WHERE deleted_at IS NULL");
+    const [recent] = await db.query(`${BOOKING_SELECT} WHERE b.deleted_at IS NULL ORDER BY b.id DESC LIMIT 5`);
+    res.json({
+      rooms, occupied_today: occ.occupied,
+      arrivals_today: Number(today.arrivals), departures_today: Number(today.departures),
+      pending_bookings: pending.n,
+      month_revenue: Number(month.revenue), month_bookings: month.bookings,
+      users: usr, recent_bookings: recent,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ---------- REPORTS (admin only) ----------
 app.get('/api/reports/summary', auth, allow('admin'), async (req, res) => {
   const [[rev]] = await db.query(
