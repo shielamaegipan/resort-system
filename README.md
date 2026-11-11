@@ -62,6 +62,7 @@ Troubleshooting:
 - Backend port in use: stop the old backend, or change `PORT` in `backend/.env`. The root startup command automatically forwards frontend API requests to that port.
 - Login fails: keep both servers running and use one of the development accounts below. Default accounts are created when the backend starts; allow a moment for initialization.
 - Page does not load: use the URL from your own terminal, and check terminal errors. Another person's `localhost` URL cannot access their laptop.
+- Vite says `Failed to resolve import "./App.jsx" from "src/main.jsx"`: `frontend/src/App.jsx` is included in this repository. Stop the dev server and run `git pull origin main` from the project root. If that file is still missing, run `git fetch origin` then `git restore --source=origin/main -- frontend/src/App.jsx`, then restart with `npm run dev`. The restore command replaces only that file with the GitHub version; save any local edits to that file first. Make sure the server is running from the same project folder you updated.
 
 Push notifications are optional; missing VAPID keys do not prevent login or bookings. Generate keys using the manual instructions below if you need push notifications.
 
