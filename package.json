@@ -1,0 +1,11 @@
+{
+  "name": "resort-system",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "setup": "npm --prefix backend ci && npm --prefix frontend ci && node scripts/setup.cjs",
+    "dev": "node scripts/dev.cjs",
+    "build": "npm --prefix frontend run build"
+  },
+  "engines": { "node": ">=20" }
+}

@@ -40,7 +40,32 @@ A web-based **Resort Reservation and Management System** built with Node.js, Rea
 | Real-time | Socket.IO |
 | Notifications | Web Push (VAPID) |
 
-## Installation
+## Quick start for collaborators (Windows, macOS, Linux)
+
+Install Node.js 20.19+ (Node.js 22 LTS recommended), Git, and MySQL/MariaDB first. Start MySQL (for example through XAMPP). Run these commands in the project root, the folder containing `backend` and `frontend`:
+
+```sh
+git pull origin main
+npm run setup
+npm run dev
+```
+
+For a first clone, clone this repository and `cd` into it instead of running `git pull`. `npm run setup` installs both applications, creates `backend/.env` only if missing, generates a local JWT secret, and creates the database and missing tables without deleting existing records. It uses the default local MySQL account `root` with an empty password. If your MySQL credentials or port differ, edit `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME` in `backend/.env`, then rerun `npm run setup`. The database account needs permission to create the selected database and tables. Existing installations with older tables may still need the migrations described below.
+
+Open the **Local URL printed by Vite** in your terminal. Usually it is `http://localhost:5173`; if that port is occupied, Vite chooses another port. Keep the terminal open. Press Ctrl+C to stop both applications. Each collaborator runs their own database and servers; GitHub does not copy `.env`, uploaded photos, or local database records.
+
+Troubleshooting:
+
+- `npm` not recognized: install Node.js, then reopen your terminal.
+- PowerShell blocks `npm.ps1`: use `npm.cmd run setup` and `npm.cmd run dev`, or run the commands in Command Prompt.
+- Database setup fails: start MySQL and check `backend/.env`; rerun setup. Herd alone does not ensure that MySQL is running.
+- Backend port in use: stop the old backend, or change `PORT` in `backend/.env`. The root startup command automatically forwards frontend API requests to that port.
+- Login fails: keep both servers running and use one of the development accounts below. Default accounts are created when the backend starts; allow a moment for initialization.
+- Page does not load: use the URL from your own terminal, and check terminal errors. Another person's `localhost` URL cannot access their laptop.
+
+Push notifications are optional; missing VAPID keys do not prevent login or bookings. Generate keys using the manual instructions below if you need push notifications.
+
+## Manual installation
 
 ### 1. Database
 Open MySQL (XAMPP / MySQL Workbench) and run:
