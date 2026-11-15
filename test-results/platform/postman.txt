@@ -1,0 +1,91 @@
+No authorization data found. Please use the `postman login` command.
+Refer:https://learning.postman.com/docs/postman-cli/postman-cli-options/#postman-login
+
+Running your collection...
+postman
+
+Resort Admin - read-only smoke
+
+Root Admin login
+
+  POST http://127.0.0.1:4102/api/auth/login [200 OK, 970 B, 169 ms]
+  Pass  Login succeeds
+  Pass  Authenticated admin
+  Pass  Token provided
+
+Root Report snapshot
+
+  GET http://127.0.0.1:4102/api/admin/reports [200 OK, 2.82 KB, 16 ms]
+  Pass  Reports load
+  Pass  Real nonnegative totals
+  Pass  Timezone explicit
+  Pass  Chart series available
+
+Root Room availability
+
+  GET http://127.0.0.1:4102/api/admin/rooms [200 OK, 2.74 KB, 51 ms]
+  Pass  Rooms load
+  Pass  Availability is database derived
+
+Root Paginated bookings
+
+  GET http://127.0.0.1:4102/api/admin/bookings?page=1 [200 OK, 2 KB, 10 ms]
+  Pass  Bookings load
+  Pass  Page has at most ten items
+
+Root Staff accounts
+
+  GET http://127.0.0.1:4102/api/admin/users [200 OK, 709 B, 8 ms]
+  Pass  Staff load
+  Pass  No password hashes exposed
+
+Root Notification inbox
+
+  GET http://127.0.0.1:4102/api/admin/notifications [200 OK, 8.02 KB, 15 ms]
+  Pass  Inbox loads
+  Pass  Unread count available
+
+Root Live dashboard
+
+  GET http://127.0.0.1:4102/api/ops/dashboard [200 OK, 4.98 KB, 20 ms]
+  Pass  Dashboard loads
+  Pass  Payments and occupancy present
+
+Root Payment ledger
+
+  GET http://127.0.0.1:4102/api/ops/payments [200 OK, 1.32 KB, 11 ms]
+  Pass  Payment ledger loads
+  Pass  Ledger paginated
+
+Root Permission-aware staff
+
+  GET http://127.0.0.1:4102/api/ops/staff [200 OK, 1.07 KB, 8 ms]
+  Pass  Staff profiles load
+  Pass  No credentials exposed
+
+Root Maintenance tasks
+
+  GET http://127.0.0.1:4102/api/ops/maintenance [200 OK, 551 B, 9 ms]
+  Pass  Maintenance loads
+
+----------------------------------------------------------------------
+|                         |            executed |             failed |
+--------------------------+---------------------+---------------------
+|              iterations |                   1 |                  0 |
+--------------------------+---------------------+---------------------
+|                requests |                  10 |                  0 |
+--------------------------+---------------------+---------------------
+|            test-scripts |                  10 |                  0 |
+--------------------------+---------------------+---------------------
+|      prerequest-scripts |                   0 |                  0 |
+--------------------------+---------------------+---------------------
+|              assertions |                  22 |                  0 |
+----------------------------------------------------------------------
+| total run duration: 1031 ms                                        |
+----------------------------------------------------------------------
+| total data received: 22.11 KB (approx)                             |
+----------------------------------------------------------------------
+| average response time: 31 ms [min: 8 ms, max: 169 ms, s.d.: 47 ms] |
+----------------------------------------------------------------------
+Postman credentials are required for publishing run details to Postman cloud.
+Please specify it by using the `postman login` command

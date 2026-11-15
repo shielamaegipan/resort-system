@@ -1,0 +1,120 @@
+No authorization data found. Please use the `postman login` command.
+Refer:https://learning.postman.com/docs/postman-cli/postman-cli-options/#postman-login
+
+Running your collection...
+postman
+
+Resort Admin - read-only smoke
+
+Root Admin login
+
+  POST http://127.0.0.1:4102/api/auth/login [200 OK, 1000 B, 172 ms]
+  Pass  Login succeeds
+  Pass  Authenticated admin
+  Pass  Token provided
+
+Root Report snapshot
+
+  GET http://127.0.0.1:4102/api/admin/reports [200 OK, 2.84 KB, 28 ms]
+  Pass  Reports load
+  Pass  Real nonnegative totals
+  Pass  Timezone explicit
+  Pass  Chart series available
+
+Root Room availability
+
+  GET http://127.0.0.1:4102/api/admin/rooms [200 OK, 3.89 KB, 16 ms]
+  Pass  Rooms load
+  Pass  Availability is database derived
+
+Root Paginated bookings
+
+  GET http://127.0.0.1:4102/api/admin/bookings?page=1 [200 OK, 2 KB, 14 ms]
+  Pass  Bookings load
+  Pass  Page has at most ten items
+
+Root Staff accounts
+
+  GET http://127.0.0.1:4102/api/admin/users [200 OK, 832 B, 11 ms]
+  Pass  Staff load
+  Pass  No password hashes exposed
+
+Root Notification inbox
+
+  GET http://127.0.0.1:4102/api/admin/notifications [200 OK, 10.64 KB, 9 ms]
+  Pass  Inbox loads
+  Pass  Unread count available
+
+Root Live dashboard
+
+  GET http://127.0.0.1:4102/api/ops/dashboard [200 OK, 5 KB, 36 ms]
+  Pass  Dashboard loads
+  Pass  Payments and occupancy present
+
+Root Payment ledger
+
+  GET http://127.0.0.1:4102/api/ops/payments [200 OK, 1.32 KB, 13 ms]
+  Pass  Payment ledger loads
+  Pass  Ledger paginated
+
+Root Permission-aware staff
+
+  GET http://127.0.0.1:4102/api/ops/staff [200 OK, 1.27 KB, 15 ms]
+  Pass  Staff profiles load
+  Pass  No credentials exposed
+
+Root Maintenance tasks
+
+  GET http://127.0.0.1:4102/api/ops/maintenance [200 OK, 1.95 KB, 7 ms]
+  Pass  Maintenance loads
+
+Root Guest profiles
+
+  GET http://127.0.0.1:4102/api/advanced/guests [200 OK, 495 B, 7 ms]
+  Pass  Guest profiles load
+  Pass  Guest records exclude credentials
+
+Root Advanced analytics
+
+  GET http://127.0.0.1:4102/api/advanced/analytics?preset=month [200 OK, 1.07 KB, 13 ms]
+  Pass  Analytics loads
+  Pass  Range and recognition explicit
+
+Root Maintenance workflow
+
+  GET http://127.0.0.1:4102/api/advanced/maintenance [200 OK, 2.1 KB, 10 ms]
+  Pass  Workflow loads
+  Pass  Maintenance workflow is explicit
+
+Root Activity audit
+
+  GET http://127.0.0.1:4102/api/advanced/activity [200 OK, 3.64 KB, 47 ms]
+  Pass  Audit list loads
+
+Root Resort settings
+
+  GET http://127.0.0.1:4102/api/advanced/settings [200 OK, 683 B, 9 ms]
+  Pass  Settings load
+  Pass  Accounting currency supported
+
+----------------------------------------------------------------------
+|                         |            executed |             failed |
+--------------------------+---------------------+---------------------
+|              iterations |                   1 |                  0 |
+--------------------------+---------------------+---------------------
+|                requests |                  15 |                  0 |
+--------------------------+---------------------+---------------------
+|            test-scripts |                  15 |                  0 |
+--------------------------+---------------------+---------------------
+|      prerequest-scripts |                   0 |                  0 |
+--------------------------+---------------------+---------------------
+|              assertions |                  31 |                  0 |
+----------------------------------------------------------------------
+| total run duration: 1589 ms                                        |
+----------------------------------------------------------------------
+| total data received: 34.12 KB (approx)                             |
+----------------------------------------------------------------------
+| average response time: 27 ms [min: 7 ms, max: 172 ms, s.d.: 40 ms] |
+----------------------------------------------------------------------
+Postman credentials are required for publishing run details to Postman cloud.
+Please specify it by using the `postman login` command
