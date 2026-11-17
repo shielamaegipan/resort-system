@@ -32,6 +32,10 @@ async function main(){
   const live=io(apiBase+'/admin',{auth:{token:admin},transports:['websocket']});sockets.push(live);const events=[];live.on('admin:change',e=>events.push(e));await waitFor(()=>live.connected,'live connection');
   const guestLive=io(apiBase+'/notifications',{auth:{token:guest},transports:['websocket']});sockets.push(guestLive);const guestEvents=[];guestLive.on('notification:change',event=>guestEvents.push(event));await waitFor(()=>guestLive.connected,'guest notification connection');
   check((await api('/notifications')).status===401,'notification inbox requires authentication');
+  check((await api('/push/test',null,'POST',{})).status===401,'test push requires authentication');
+  check((await api('/push/status',guest,'POST',{})).data.subscribed===false,'push status is scoped to the current device and user');
+  check((await api('/push/test',guest,'POST',{endpoint:'https://push.example.test/not-owned'})).status===404,'test push rejects an unowned device endpoint');
+
   const stranger=(await api('/auth/register',null,'POST',{name:'Unrelated Guest',email:'unrelated@verify.test',password:'Unrelated-password-123'})).data.token;
   check(!!stranger,'unrelated guest created for notification isolation');
   const roomPayload={name:'Platform test suite',type:'Villa',capacity:4,price_per_night:1250.25,description:'Isolated verification',amenities:'Wi-Fi, balcony',status:'available'};
@@ -239,6 +243,12 @@ async function main(){
   await gp.getByRole('heading',{name:'Notifications',exact:true}).waitFor();
   await gp.locator('article.note-item').first().waitFor();
   check(true,'guest notification page renders persisted inbox records');
+  check(await gp.getByRole('button',{name:'Send test notification',exact:true}).isDisabled(),'guest test-push button requires an enabled device subscription');
+  await gp.reload();await browserLogin(gp,'guest@resort.com','guest123');
+  await gp.locator('.top-nav').getByRole('button',{name:'Notifications',exact:true}).click();
+  await gp.locator('article.note-item').first().waitFor();
+  check(await gp.evaluate(async()=>!!(await navigator.serviceWorker.getRegistration())),'Service Worker remains registered after a development refresh');
+
   await gp.getByRole('button',{name:'Mark all as read',exact:true}).click();
   await gp.getByText('0 unread',{exact:true}).waitFor();
   check((await api('/notifications',guest)).data.unread===0,'guest UI marks inbox read in the database');

@@ -55,6 +55,23 @@ export default function App() {
   // Always start on the login page
   useEffect(() => { API.setToken?.(null); }, []);
 
+  useEffect(() => {
+    if (!user) return;
+    const openNotifications = () => {
+      if (user.role === 'guest') setPage('notifications');
+      else setNotificationOpen(true);
+    };
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('notifications')) {
+      openNotifications();
+      url.searchParams.delete('notifications');
+      window.history.replaceState(null, '', url);
+    }
+    const onMessage = event => { if (event.data?.type === 'open-notifications') openNotifications(); };
+    navigator.serviceWorker?.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
+  }, [user?.id, user?.role]);
+
   // Send bookings that were saved while offline
   useEffect(() => {
     if (!user || user.role === 'admin') return;

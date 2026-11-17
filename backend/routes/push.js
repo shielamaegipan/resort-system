@@ -20,6 +20,38 @@ if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
 
 router.get('/key', (req, res) => res.json({ publicKey: enabled ? VAPID_PUBLIC_KEY : '' }));
 
+router.post('/status', auth, async (req, res) => {
+  const endpoint = typeof req.body?.endpoint === 'string' ? req.body.endpoint : '';
+  const [[row]] = await db.query('SELECT COUNT(*) subscriptions FROM push_subscriptions WHERE user_id=? AND endpoint=?', [req.user.id, endpoint]);
+  res.json({ configured: enabled, subscribed: Number(row.subscriptions) > 0 });
+});
+
+const testRequests = new Map();
+router.post('/test', auth, async (req, res) => {
+  if (!enabled) return res.status(503).json({ error: 'Push is not configured on the server. Contact the administrator.' });
+  const endpoint = typeof req.body?.endpoint === 'string' ? req.body.endpoint : '';
+  const [[subscription]] = await db.query('SELECT * FROM push_subscriptions WHERE user_id=? AND endpoint=?', [req.user.id, endpoint]);
+  if (!subscription) return res.status(404).json({ error: 'Enable push notifications on this device first.' });
+  const now = Date.now();
+  for (const [id, expires] of testRequests) if (expires <= now) testRequests.delete(id);
+  if ((testRequests.get(req.user.id) || 0) > now) return res.status(429).json({ error: 'Wait 10 seconds before sending another test.' });
+  testRequests.set(req.user.id, now + 10000);
+  try {
+    await webpush.sendNotification({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, JSON.stringify({
+      title: 'Resort push notification', body: 'Push notifications are working. You can receive booking and chat alerts on this device.',
+      tag: `push-test-${req.user.id}-${now}`, url: '/?notifications=1',
+    }), { timeout: 5000, TTL: 60 });
+    res.status(202).json({ accepted: true });
+  } catch (error) {
+    if (error.statusCode === 404 || error.statusCode === 410) {
+      await db.query('DELETE FROM push_subscriptions WHERE id=? AND user_id=?', [subscription.id, req.user.id]);
+      return res.status(410).json({ error: 'This device subscription expired. Enable push notifications again.' });
+    }
+    console.warn('Test push failed:', error.statusCode || error.code || 'DELIVERY_ERROR');
+    res.status(502).json({ error: 'The push service could not accept the test. Check your connection and server push keys, then try again.' });
+  }
+});
+
 router.post('/subscribe', auth, async (req, res) => {
   const { endpoint, keys } = req.body || {};
   if (!endpoint || !keys?.p256dh || !keys?.auth) return res.status(400).json({ error: 'Invalid subscription' });

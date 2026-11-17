@@ -1,26 +1,18 @@
-import { useState } from 'react';
-import { enablePush } from '../push.js';
+import PushControls from '../features/PushControls.jsx';
 import { useNotifications } from '../features/notification-client.jsx';
 import './staff.css';
 import './guest.css';
 
 export default function GuestNotifications({ notice, goTo }) {
   const { items, unread, error, loading, load, markRead } = useNotifications();
-  const [busy, setBusy] = useState(false);
-  const enable = async () => {
-    setBusy(true);
-    try { await enablePush(); notice('Notifications enabled on this device'); }
-    catch (e) { notice(e.message); }
-    finally { setBusy(false); }
-  };
   const read = async (item, open = false) => {
     try { await markRead(item?.id); if (open) goTo(item.category === 'chat' ? 'chat' : 'mybookings'); }
     catch (e) { notice(e.message); }
   };
   return <>
     <h1>Notifications</h1>
+    <PushControls/>
     <div className="toolbar actions">
-      <button className="primary" disabled={busy} onClick={enable}>{busy ? 'Enabling...' : 'Enable push notifications'}</button>
       <button disabled={!unread} onClick={() => read()}>Mark all as read</button>
       <span className="muted" role="status">{unread} unread</span>
     </div>

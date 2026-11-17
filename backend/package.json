@@ -6,6 +6,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "migrate": "node migrate-all.js",
+    "setup:push": "node setup-push.js",
     "test": "node ../scripts/verify-advanced.cjs"
   },
   "dependencies": {

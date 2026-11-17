@@ -14,15 +14,45 @@ export async function enablePush() {
   const { publicKey } = await api('/push/key');
   const key = publicKey || import.meta.env.VITE_VAPID_PUBLIC_KEY;
   if (!key) throw new Error('VAPID public key is not set on the server');
-  await navigator.serviceWorker.register('/sw.js');
-  const reg = await Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => setTimeout(() => reject(new Error('Notification setup timed out. Reload and try again.')), 10000))]);
+  await navigator.serviceWorker.register(import.meta.env.DEV ? '/sw.js?mode=development' : '/sw.js', { updateViaCache: 'none' });
+  let timer;
+  let reg;
+  try { reg = await Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Notification setup timed out. Reload and try again.')), 10000); })]); }
+  finally { clearTimeout(timer); }
   let sub = await reg.pushManager.getSubscription();
   const applicationServerKey = toKey(key);
   if (sub?.options.applicationServerKey && String(new Uint8Array(sub.options.applicationServerKey)) !== String(applicationServerKey)) {
     await sub.unsubscribe(); sub = null;
   }
-  sub ||= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+  if (!sub) {
+    let subscriptionTimer;
+    try {
+      sub = await Promise.race([
+        reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey }),
+        new Promise((_, reject) => { subscriptionTimer = setTimeout(() => reject(new Error('The browser push service did not respond. Check your connection and try again.')), 20000); }),
+      ]);
+    } catch (error) {
+      if (error.name === 'NotAllowedError' || /permission denied/i.test(error.message)) throw new Error('The browser could not register this device for push. Check site notification permissions and your browser or operating-system notification settings.');
+      throw error;
+    } finally { clearTimeout(subscriptionTimer); }
+  }
   await api('/push/subscribe', { method: 'POST', body: sub.toJSON() });
+}
+
+export async function getPushStatus() {
+  const supported = window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  if (!supported) return { supported: false, subscribed: false, configured: false };
+  const reg = await navigator.serviceWorker.getRegistration();
+  const subscription = await reg?.pushManager?.getSubscription();
+  const status = await api('/push/status', { method: 'POST', body: { endpoint: subscription?.endpoint } });
+  return { ...status, supported: true, permission: Notification.permission, subscribed: !!subscription && status.subscribed };
+}
+
+export async function sendTestPush() {
+  const reg = await navigator.serviceWorker?.getRegistration();
+  const subscription = await reg?.pushManager?.getSubscription();
+  if (!subscription) throw new Error('Enable push notifications on this device first');
+  return api('/push/test', { method: 'POST', body: { endpoint: subscription.endpoint } });
 }
 
 export async function disablePushForSession() {
