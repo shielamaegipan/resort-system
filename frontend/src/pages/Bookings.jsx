@@ -19,7 +19,7 @@ export function actionsFor(role, status) {
   return [];
 }
 
-export default function Bookings({ user, notice }) {
+export default function Bookings({ user, notice, goTo, initialFilters }) {
   const [rows, setRows] = useState([]);
   const [error,setError]=useState(''),[loading,setLoading]=useState(true);
   const [archived, setArchived] = useState([]);
@@ -30,6 +30,7 @@ export default function Bookings({ user, notice }) {
   const isGuest = user.role === 'guest';
   const [detail,setDetail]=useState(null),[creating,setCreating]=useState(false),[rooms,setRooms]=useState([]),[page,setPage]=useState(1),[meta,setMeta]=useState(null);
   const [filters,setFilters]=useState({search:'',status:'',start:'',end:'',room_id:'',user_id:''});
+  useEffect(() => { if (user.role === 'admin') { setFilters({search:'',status:'',start:'',end:'',room_id:'',user_id:'',...initialFilters}); setPage(1); setTab('active'); } }, [initialFilters, user.role]);
   const applied=useDebounced(filters);
   useEffect(()=>{if(!isGuest)api('/rooms').then(setRooms).catch(e=>notice(e.message));},[isGuest,notice]);
 
@@ -75,6 +76,7 @@ export default function Bookings({ user, notice }) {
           <button className={tab === 'archived' ? 'on' : ''} onClick={() => {setTab('archived');setPage(1);}}>Archived ({archivedCount})</button>
         </div>
       )}
+      {user.role === 'admin' && <section className="card pad admin-booking-tools"><div className="actions"><button className="primary" onClick={()=>setCreating(true)}>Create reservation</button><button onClick={()=>goTo('calendar')}>Open booking calendar</button></div><p className="muted">Quick filters ? dates match stays overlapping the selected day</p><div className="actions" aria-label="Quick booking filters">{[['','All bookings'],['pending','Pending'],['confirmed','Confirmed'],['checked_in','Checked in'],['checked_out','Checked out']].map(([status,label])=><button key={status} aria-pressed={filters.status===status&&!filters.start&&!filters.end} onClick={()=>{setFilters({...filters,status,start:'',end:''});setPage(1);}}>{label}</button>)}<button aria-pressed={filters.start===new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila'}).format(new Date())&&filters.end===filters.start} onClick={()=>{const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila'}).format(new Date());setFilters({...filters,status:'',start:day,end:day});setPage(1);}}>Staying today</button><button onClick={()=>{setFilters({search:'',status:'',start:'',end:'',room_id:'',user_id:''});setPage(1);}}>Clear filters</button></div>{(filters.status||filters.start||filters.end)&&<p role="status">Showing {LABEL[filters.status]||'all statuses'}{filters.start?` from ${filters.start}`:''}{filters.end?` through ${filters.end}`:''}</p>}</section>}
       {queued.length > 0 && <p className="banner">{queued.length} booking(s) saved offline. They will be sent when you are back online.</p>}
       {error&&<p className="error" role="alert">{error} <button onClick={load}>Retry</button></p>}
       <div className="card table-wrap">

@@ -7,7 +7,8 @@ import Bookings from './pages/Bookings.jsx';
 import Today from './pages/Today.jsx';
 import Chat from './pages/Chat.jsx';
 import Users from './pages/Users.jsx';
-import Reports from './pages/Reports.jsx';
+import AdminReports from './admin/AdminReports.jsx';
+import AdminActivity from './admin/AdminActivity.jsx';
 import { AdminProvider } from './admin/data.jsx';
 import { FeaturePage } from './features/Pages.jsx';
 import Notifications, { EmployeeSync, NotificationRecord } from './features/Notifications.jsx';
@@ -28,6 +29,7 @@ const ROLE_LABEL = { admin: 'Admin', staff: 'Staff', guest: 'Guest' };
 export default function App() {
   const [user, setUser] = useState(null);
   const [page, setPage] = useState('rooms');
+  const [bookingFilter, setBookingFilter] = useState(null);
   const [toast, setToast] = useState('');
   const [headerAction, setHeaderAction] = useState(null);
   const [notificationOpen,setNotificationOpen]=useState(false);
@@ -49,14 +51,15 @@ export default function App() {
     return () => { window.removeEventListener('online', run); navigator.serviceWorker?.removeEventListener('message', onMsg); };
   }, [user, notice]);
 
-  if (!user) return <Login onLogin={(u, t) => { setToken(t); setUser(u); setPage('rooms'); }} />;
+  if (!user) return <Login onLogin={(u, t) => { setToken(t); setUser(u); setPage(u.role === 'admin' && u.permissions?.includes('dashboard.view') ? 'dashboard' : 'rooms'); }} />;
 
   const logout = () => { setToken(null); setUser(null); };
   const employee=user.role!=='guest';
   const can=p=>user.permissions?.includes(p);
   const items = employee ? [...(NAV[user.role]||[]).filter(([key])=>key==='rooms'?can('rooms.view'):key==='bookings'||key==='today'?can('bookings.manage'):key==='users'?can('staff.manage'):key==='reports'?can('reports.view'):key==='chat'?user.permission_role==='receptionist':false),...EXTRA_NAV.filter(([, ,permission])=>can(permission))] : NAV.guest;
-  const goTo = (key) => { setHeaderAction(null); setPage(user.role === 'guest' && key === 'bookings' ? 'mybookings' : key); };
-  const props = { user, notice, setHeaderAction, goTo };
+  if (user.role === 'admin') items.sort((a, b) => (a[0] === 'dashboard' ? -1 : b[0] === 'dashboard' ? 1 : 0));
+  const goTo = (key, filters = null) => { setBookingFilter(key === 'bookings' ? filters : null); setHeaderAction(null); setPage(user.role === 'guest' && key === 'bookings' ? 'mybookings' : key); };
+  const props = { user, notice, setHeaderAction, goTo, initialFilters: bookingFilter };
   const isStaff = user.role === 'staff';
   const isGuest = user.role === 'guest';
 
@@ -95,8 +98,9 @@ export default function App() {
         {page === 'today' && isStaff && <Today {...props} />}
         {page === 'chat' && user.role !== 'admin' && <Chat {...props} />}
         {page === 'users' && user.role === 'admin' && <Users {...props} />}
-        {page === 'reports' && user.role === 'admin' && <Reports {...props} />}
-        {employee&&EXTRA_NAV.some(([key])=>key===page)&&items.some(([key])=>key===page)&&<FeaturePage page={page} user={user} goTo={goTo}/>}
+        {page === 'reports' && user.role === 'admin' && <AdminReports />}
+        {page === 'activity' && user.role === 'admin' && can('activity.view') && <AdminActivity/>}
+        {employee&&!(page === 'activity' && user.role === 'admin')&&EXTRA_NAV.some(([key])=>key===page)&&items.some(([key])=>key===page)&&<FeaturePage page={page} user={user} goTo={goTo}/>}
       </main>
       {related&&employee&&<NotificationRecord record={related} user={user} onClose={()=>setRelated(null)} goTo={goTo}/>}
       {toast && <div className="toast">{toast}</div>}

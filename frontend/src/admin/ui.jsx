@@ -24,11 +24,11 @@ export function QueryState({ query, children }) {
   return <>{query.isFetching && <span className="admin-updating" role="status">Updating…</span>}{children(query.data)}</>;
 }
 export function Empty({ title = 'Nothing here yet', text = 'New records will appear here as they are added.' }) { return <div className="admin-empty"><Icon name="search" size={28} /><h3>{title}</h3><p>{text}</p></div>; }
-export function Dialog({ title, onClose, children, busy = false }) {
+export function Dialog({ title, onClose, children, busy = false, drawer = false }) {
   const ref = useRef();
   const titleId = useId();
   useEffect(() => { const element = ref.current; element.showModal(); return () => element.close(); }, []);
-  return <dialog ref={ref} className="admin-dialog" aria-labelledby={titleId} onCancel={(e) => { e.preventDefault(); if (!busy) onClose(); }}>
+  return <dialog ref={ref} className={`admin-dialog${drawer ? ' admin-drawer' : ''}`} aria-labelledby={titleId} onCancel={(e) => { e.preventDefault(); if (!busy) onClose(); }}>
     <div className="admin-dialog-head"><h2 id={titleId}>{title}</h2><button type="button" className="admin-icon" aria-label="Close dialog" disabled={busy} onClick={onClose}><Icon name="close" /></button></div>
     {children}
   </dialog>;
