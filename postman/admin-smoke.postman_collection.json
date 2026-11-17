@@ -1,0 +1,348 @@
+{
+  "info": {
+    "name": "Resort Admin - read-only smoke",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:4000"
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin@resort.com"
+    },
+    {
+      "key": "adminPassword",
+      "value": ""
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{adminToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Admin login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"{{adminEmail}}\", \"password\": \"{{adminPassword}}\"}"
+        },
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Login succeeds', () => pm.response.to.have.status(200));",
+              "const data = pm.response.json();",
+              "pm.test('Authenticated admin', () => pm.expect(data.user.role).to.equal('admin'));",
+              "pm.test('Token provided', () => pm.expect(data.token).to.be.a('string'));",
+              "pm.collectionVariables.set('adminToken', data.token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Report snapshot",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/reports"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Reports load', () => pm.response.to.have.status(200));",
+              "const d = pm.response.json();",
+              "pm.test('Real nonnegative totals', () => { pm.expect(d.revenue).to.be.at.least(0); pm.expect(d.bookings).to.be.at.least(0); });",
+              "pm.test('Timezone explicit', () => pm.expect(d.timezone).to.equal('Asia/Manila'));",
+              "pm.test('Chart series available', () => { pm.expect(d.monthly).to.be.an('array'); pm.expect(d.occupancy).to.have.lengthOf(14); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Room availability",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/rooms"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Rooms load', () => pm.response.to.have.status(200));",
+              "pm.test('Availability is database derived', () => pm.response.json().forEach(r => { pm.expect(r).to.have.property('available_for_dates'); pm.expect(Number(r.price_per_night)).to.be.at.least(0); }));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Paginated bookings",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/bookings?page=1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Bookings load', () => pm.response.to.have.status(200));",
+              "pm.test('Page has at most ten items', () => pm.expect(pm.response.json().items.length).to.be.at.most(10));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Staff accounts",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/users"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Staff load', () => pm.response.to.have.status(200));",
+              "pm.test('No password hashes exposed', () => pm.response.json().forEach(u => { pm.expect(u.role).to.equal('staff'); pm.expect(u).to.not.have.property('password_hash'); }));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notification inbox",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/admin/notifications"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Inbox loads', () => pm.response.to.have.status(200));",
+              "pm.test('Unread count available', () => pm.expect(pm.response.json().unread).to.be.at.least(0));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Live dashboard",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/ops/dashboard"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Dashboard loads', () => pm.response.to.have.status(200));",
+              "pm.test('Payments and occupancy present', () => { const d=pm.response.json(); pm.expect(d).to.have.property('today_revenue'); pm.expect(d.rooms).to.have.property('occupied'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payment ledger",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/ops/payments"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Payment ledger loads', () => pm.response.to.have.status(200));",
+              "pm.test('Ledger paginated', () => { const d=pm.response.json(); pm.expect(d.items).to.be.an('array'); pm.expect(d.pages).to.be.at.least(1); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Permission-aware staff",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/ops/staff"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Staff profiles load', () => pm.response.to.have.status(200));",
+              "pm.test('No credentials exposed', () => pm.response.json().forEach(u => { pm.expect(u).to.not.have.property('password_hash'); pm.expect(u).to.not.have.property('token_version'); }));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Maintenance tasks",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/ops/maintenance"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Maintenance loads', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Guest profiles",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/advanced/guests"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Guest profiles load', () => pm.response.to.have.status(200));",
+              "pm.test('Guest records exclude credentials', () => pm.response.json().items.forEach(g => pm.expect(g).to.not.have.property('password_hash')));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Advanced analytics",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/advanced/analytics?preset=month"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Analytics loads', () => pm.response.to.have.status(200));",
+              "pm.test('Range and recognition explicit', () => { const d=pm.response.json(); pm.expect(d.start).to.be.a('string'); pm.expect(d.recognition).to.include('refund'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Maintenance workflow",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/advanced/maintenance"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Workflow loads', () => pm.response.to.have.status(200));",
+              "pm.test('Maintenance workflow is explicit', () => pm.response.json().items.forEach(m => pm.expect(['pending','in_progress','completed','cancelled']).to.include(m.workflow)));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Activity audit",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/advanced/activity"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Audit list loads', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Resort settings",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/advanced/settings"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Settings load', () => pm.response.to.have.status(200));",
+              "pm.test('Accounting currency supported', () => pm.expect(pm.response.json().currency).to.equal('PHP'));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
