@@ -1,0 +1,6 @@
+
+> resort-backend@1.0.0 start
+> node server.js
+
+VAPID keys missing: push notifications are disabled
+API running on http://localhost:4000

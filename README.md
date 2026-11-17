@@ -7,7 +7,7 @@ A web-based **Resort Reservation and Management System** built with Node.js, Rea
 | Role | What they can do |
 |------|------------------|
 | **Admin** | Management and oversight: **Users** (create accounts, change roles, delete), **Reports** (revenue, occupancy, bookings per month), add / edit / delete rooms, view all bookings, **Archived** rooms and bookings with Restore. No chat. |
-| **Staff** | Daily front-desk work: confirm / decline bookings, check guests in / out, **Today** list (arrivals and departures), add / edit / **delete** rooms, set room status (available / maintenance), **chat with guests**. |
+| **Staff** | Daily front-desk work: **Dashboard**, **Rooms** (add / edit / delete, set maintenance), **Room Availability** (per date), **Bookings** (confirm / decline), **Check-in / Check-out**, **Cash Payments**, **Guest Count**, **Services**, **Today** list, and **chat with guests**. |
 | **Guest** | Register and log in, search rooms by dates and guests, book (works offline), view own bookings, **cancel only while the booking is still pending** (not after the staff confirms), chat with staff, get notifications. |
 
 ### Default accounts (created automatically when the backend starts)
@@ -154,6 +154,24 @@ frontend/
 - The picture is resized in the browser (max 1280px, JPEG) and then uploaded, so large laptop photos work.
 - The server accepts JPG, PNG and WEBP up to 25 MB, shows clear error messages, and automatically adds the `rooms.image_url` column if it is missing (running `migrate_add_room_image.sql` is no longer required).
 - Only **admin** and **staff** can upload pictures.
+
+## Staff API (new)
+
+All endpoints need a staff (or admin) login.
+
+| Feature | Endpoint |
+|---------|----------|
+| Dashboard | `GET /api/staff/dashboard` |
+| Room Availability | `GET /api/rooms/availability?date=YYYY-MM-DD` (available / reserved / occupied / maintenance) |
+| Check-in | `POST /api/bookings/:id/check-in` (booking must be *confirmed* and the check-in date must have arrived) |
+| Check-out | `POST /api/bookings/:id/check-out` (blocked if there is an unpaid balance, unless `{ "allow_unpaid": true }`) |
+| Bill of a booking | `GET /api/bookings/:id/bill` (room + services - cash paid = balance) |
+| Cash Payments | `POST /api/bookings/:id/payments` `{ amount, note }`, `GET /api/payments?date=YYYY-MM-DD` |
+| Guest Count | `GET /api/guests/count?date=YYYY-MM-DD` (in-house, arriving, departing + list) |
+| Services (catalog) | `GET / POST /api/services`, `PUT / DELETE /api/services/:id` |
+| Services used by a guest | `POST /api/bookings/:id/services` `{ service_id, quantity }`, `DELETE /api/bookings/:id/services/:rowId` |
+
+The new tables (`services`, `booking_services`, `payments`) are created automatically when the backend starts, and 6 sample services are seeded. They are also in `schema.sql` and `migrate_add_staff_features.sql`.
 
 ## Notes
 

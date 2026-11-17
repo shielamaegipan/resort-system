@@ -14,6 +14,24 @@ const app = express();
 const server = http.createServer(app);
 const origin = process.env.CLIENT_ORIGIN || '*';
 
+if (!process.env.JWT_SECRET) console.warn('WARNING: JWT_SECRET is missing in backend/.env');
+process.on('unhandledRejection', (e) => console.error('Unhandled rejection:', e));
+
+// ---------- Make async route handlers safe ----------
+// Express 4 does not catch errors thrown inside async handlers, which can crash the
+// server or leave the request hanging. This sends them to the error handler instead.
+for (const method of ['get', 'post', 'put', 'patch', 'delete']) {
+  const original = app[method].bind(app);
+  app[method] = (route, ...handlers) => {
+    if (handlers.length === 0) return original(route); // app.get('setting') used internally by Express
+    return original(route, ...handlers.map((h) => (
+      typeof h === 'function' && h.length < 4
+        ? (req, res, next) => Promise.resolve(h(req, res, next)).catch(next)
+        : h
+    )));
+  };
+}
+
 app.use(cors({ origin }));
 app.use(express.json({ limit: '25mb' })); // raised so large base64 images fit
 
@@ -29,15 +47,32 @@ app.use('/api/push', pushRouter);
 function allow(...roles) {
   return async (req, res, next) => {
     try {
-      const [[u]] = await db.query('SELECT role FROM users WHERE id = ? AND deleted_at IS NULL', [req.user.id]);
-      if (!u) return res.status(401).json({ error: 'User not found' });
-      req.user.role = u.role;
+      const tokenUser = req.user || {};
+      const uid = tokenUser.id ?? tokenUser.userId ?? tokenUser.sub;
+      let u = null;
+
+      if (uid != null) {
+        [[u]] = await db.query('SELECT id, role FROM users WHERE id = ? AND deleted_at IS NULL', [uid]);
+      }
+      // The token may carry an old id (for example after the database was re-imported).
+      // The token is signed, so its email can be trusted: find the account by email instead.
+      if (!u && tokenUser.email) {
+        [[u]] = await db.query('SELECT id, role FROM users WHERE email = ? AND deleted_at IS NULL', [tokenUser.email]);
+      }
+
+      if (!u) {
+        console.warn('[allow] 401 account not found:', req.method, req.originalUrl, 'token =', JSON.stringify(tokenUser));
+        return res.status(401).json({ error: 'Account not found. Please log in again.' });
+      }
+
+      req.user = { ...tokenUser, id: u.id, role: u.role };
       if (roles.length && !roles.includes(u.role)) {
+        console.warn('[allow] 403 role not allowed:', req.method, req.originalUrl, 'role =', u.role, 'needs =', roles.join('/'));
         return res.status(403).json({ error: 'You are not allowed to do this' });
       }
       next();
     } catch (e) {
-      console.error(e);
+      console.error('[allow] error:', e);
       res.status(500).json({ error: 'Server error' });
     }
   };
@@ -291,6 +326,238 @@ app.get('/api/reports/summary', auth, allow('admin'), async (req, res) => {
   res.json({ revenue: Number(rev.revenue), bookings: rev.bookings, byStatus, monthly, rooms, occupied_today: occ.occupied, users: usr });
 });
 
+// =====================================================================
+// STAFF FEATURES: Dashboard, Room Availability, Check-in/out,
+// Cash Payments, Guest Count, Services
+// =====================================================================
+const wrap = (fn) => (req, res, next) => fn(req, res, next).catch(next);
+const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+
+// Bill of one booking = room total + services - cash paid
+async function getBill(bookingId) {
+  const [[b]] = await db.query(`${BOOKING_SELECT} WHERE b.id = ? AND b.deleted_at IS NULL`, [bookingId]);
+  if (!b) return null;
+  const [[s]] = await db.query('SELECT COALESCE(SUM(price * quantity),0) AS t FROM booking_services WHERE booking_id = ?', [bookingId]);
+  const [[p]] = await db.query('SELECT COALESCE(SUM(amount),0) AS t FROM payments WHERE booking_id = ?', [bookingId]);
+  const room_total = Number(b.total_price);
+  const services_total = Number(s.t);
+  const paid = Number(p.t);
+  const total = room_total + services_total;
+  return { booking: b, room_total, services_total, total, paid, balance: total - paid };
+}
+
+// ---------- 1. STAFF DASHBOARD ----------
+app.get('/api/staff/dashboard', auth, allow('staff', 'admin'), wrap(async (req, res) => {
+  const [[rooms]] = await db.query("SELECT COUNT(*) AS total, COALESCE(SUM(status='available'),0) AS available, COALESCE(SUM(status='maintenance'),0) AS maintenance FROM rooms WHERE deleted_at IS NULL");
+  const [[occ]] = await db.query("SELECT COUNT(DISTINCT room_id) AS occupied FROM bookings WHERE deleted_at IS NULL AND status = 'checked_in' AND check_in <= CURDATE() AND check_out > CURDATE()");
+  const [[today]] = await db.query(
+    `SELECT COALESCE(SUM(IF(check_in = CURDATE() AND status IN ('pending','confirmed','checked_in'), 1, 0)),0) AS arrivals,
+            COALESCE(SUM(IF(check_in = CURDATE() AND status IN ('pending','confirmed','checked_in'), guests, 0)),0) AS arriving_guests,
+            COALESCE(SUM(IF(check_out = CURDATE() AND status = 'checked_in', 1, 0)),0) AS departures,
+            COALESCE(SUM(IF(check_out = CURDATE() AND status = 'checked_in', guests, 0)),0) AS departing_guests,
+            COALESCE(SUM(IF(status = 'checked_in', guests, 0)),0) AS in_house_guests
+     FROM bookings WHERE deleted_at IS NULL`
+  );
+  const [[pending]] = await db.query("SELECT COUNT(*) AS n FROM bookings WHERE deleted_at IS NULL AND status = 'pending'");
+  const [[cash]] = await db.query('SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS n FROM payments WHERE DATE(created_at) = CURDATE()');
+  const [[svc]] = await db.query('SELECT COALESCE(SUM(quantity),0) AS n FROM booking_services WHERE DATE(created_at) = CURDATE()');
+  const [pendingList] = await db.query(`${BOOKING_SELECT} WHERE b.deleted_at IS NULL AND b.status = 'pending' ORDER BY b.id DESC LIMIT 5`);
+  res.json({
+    rooms,
+    occupied_today: occ.occupied,
+    free_today: Math.max(0, Number(rooms.available) - occ.occupied),
+    arrivals_today: Number(today.arrivals),
+    arriving_guests: Number(today.arriving_guests),
+    departures_today: Number(today.departures),
+    departing_guests: Number(today.departing_guests),
+    in_house_guests: Number(today.in_house_guests),
+    pending_bookings: pending.n,
+    cash_today: Number(cash.total),
+    payments_today: cash.n,
+    services_today: Number(svc.n),
+    pending_list: pendingList,
+  });
+}));
+
+// ---------- 2. ROOM AVAILABILITY (per date) ----------
+// GET /api/rooms/availability?date=YYYY-MM-DD   (default: today)
+// state: available | reserved | occupied | maintenance
+app.get('/api/rooms/availability', auth, allow('staff', 'admin'), wrap(async (req, res) => {
+  const date = req.query.date;
+  if (date && !isDate(date)) return res.status(400).json({ error: 'Date must be YYYY-MM-DD' });
+  const [[d]] = await db.query('SELECT COALESCE(?, CURDATE()) AS d', [date || null]);
+  const day = d.d;
+  const [rooms] = await db.query('SELECT * FROM rooms WHERE deleted_at IS NULL ORDER BY id');
+  const [bks] = await db.query(
+    `SELECT id, room_id, guest_name, guests, check_in, check_out, status FROM bookings
+     WHERE deleted_at IS NULL AND status IN ('pending','confirmed','checked_in') AND check_in <= ? AND check_out > ?
+     ORDER BY FIELD(status,'checked_in','confirmed','pending')`, [day, day]
+  );
+  const byRoom = {};
+  for (const b of bks) if (!byRoom[b.room_id]) byRoom[b.room_id] = b;
+  const out = rooms.map((r) => {
+    const b = byRoom[r.id] || null;
+    let state = 'available';
+    if (r.status === 'maintenance') state = 'maintenance';
+    else if (b && b.status === 'checked_in') state = 'occupied';
+    else if (b) state = 'reserved';
+    return { ...r, state, booking: b };
+  });
+  const summary = { available: 0, reserved: 0, occupied: 0, maintenance: 0 };
+  out.forEach((r) => { summary[r.state]++; });
+  res.json({ date: day, summary, rooms: out });
+}));
+
+// ---------- 3. CHECK-IN / CHECK-OUT ----------
+app.post('/api/bookings/:id/check-in', auth, allow('staff', 'admin'), wrap(async (req, res) => {
+  const [[b]] = await db.query(
+    'SELECT b.*, (b.check_in <= CURDATE()) AS arrived, (b.check_out > CURDATE()) AS not_expired FROM bookings b WHERE b.id = ? AND b.deleted_at IS NULL', [req.params.id]
+  );
+  if (!b) return res.status(404).json({ error: 'Booking not found' });
+  if (b.status === 'pending') return res.status(400).json({ error: 'Confirm the booking first before check-in' });
+  if (b.status !== 'confirmed') return res.status(400).json({ error: `Cannot check in a booking that is ${b.status.replace('_', ' ')}` });
+  if (!b.arrived) return res.status(400).json({ error: 'The check-in date has not arrived yet' });
+  if (!b.not_expired) return res.status(400).json({ error: 'This booking has already passed its check-out date' });
+  const [[room]] = await db.query('SELECT status FROM rooms WHERE id = ? AND deleted_at IS NULL', [b.room_id]);
+  if (!room) return res.status(400).json({ error: 'Room no longer exists' });
+  if (room.status === 'maintenance') return res.status(400).json({ error: 'The room is under maintenance' });
+  await db.query("UPDATE bookings SET status = 'checked_in' WHERE id = ?", [b.id]);
+  res.json(await getBill(b.id));
+}));
+
+app.post('/api/bookings/:id/check-out', auth, allow('staff', 'admin'), wrap(async (req, res) => {
+  const bill = await getBill(req.params.id);
+  if (!bill) return res.status(404).json({ error: 'Booking not found' });
+  if (bill.booking.status !== 'checked_in') return res.status(400).json({ error: 'Only checked-in guests can be checked out' });
+  if (bill.balance > 0 && !req.body.allow_unpaid) {
+    return res.status(409).json({ error: `Unpaid balance: ${bill.balance}. Collect cash payment first.`, balance: bill.balance, needs_payment: true });
+  }
+  await db.query("UPDATE bookings SET status = 'checked_out' WHERE id = ?", [req.params.id]);
+  res.json(await getBill(req.params.id));
+}));
+
+// ---------- 4. CASH PAYMENTS ----------
+app.get('/api/bookings/:id/bill', auth, allow('staff', 'admin'), wrap(async (req, res) => {
+  const bill = await getBill(req.params.id);
+  if (!bill) return res.status(404).json({ error: 'Booking not found' });
+  const [payments] = await db.query(
+    `SELECT p.*, u.name AS received_by_name FROM payments p JOIN users u ON u.id = p.received_by
+     WHERE p.booking_id = ? ORDER BY p.id DESC`, [req.params.id]
+  );
+  const [services] = await db.query('SELECT * FROM booking_services WHERE booking_id = ? ORDER BY id', [req.params.id]);
+  res.json({ ...bill, payments, services });
+}));
+
+app.post('/api/bookings/:id/payments', auth, allow('staff', 'admin'), wrap(async (req, res) => {
+  const amount = Math.round(Number(req.body.amount) * 100) / 100;
+  if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: 'Enter a cash amount greater than 0' });
+  const bill = await getBill(req.params.id);
+  if (!bill) return res.status(404).json({ error: 'Booking not found' });
+  if (bill.booking.status === 'cancelled') return res.status(400).json({ error: 'This booking is cancelled' });
+  if (amount > bill.balance) return res.status(400).json({ error: `Amount is more than the balance (${bill.balance})` });
+  await db.query(
+    "INSERT INTO payments (booking_id, amount, method, note, received_by) VALUES (?, ?, 'cash', ?, ?)",
+    [req.params.id, amount, String(req.body.note || '').slice(0, 255), req.user.id]
+  );
+  res.status(201).json(await getBill(req.params.id));
+}));
+
+// All cash received on a date (default today). ?date=YYYY-MM-DD
+app.get('/api/payments', auth, allow('staff', 'admin'), wrap(async (req, res) => {
+  const date = req.query.date;
+  if (date && !isDate(date)) return res.status(400).json({ error: 'Date must be YYYY-MM-DD' });
+  const [rows] = await db.query(
+    `SELECT p.*, b.guest_name, r.name AS room_name, u.name AS received_by_name
+     FROM payments p JOIN bookings b ON b.id = p.booking_id JOIN rooms r ON r.id = b.room_id JOIN users u ON u.id = p.received_by
+     WHERE DATE(p.created_at) = COALESCE(?, CURDATE()) ORDER BY p.id DESC`, [date || null]
+  );
+  const total = rows.reduce((t, p) => t + Number(p.amount), 0);
+  res.json({ total, count: rows.length, payments: rows });
+}));
+
+// ---------- 5. GUEST COUNT ----------
+// GET /api/guests/count?date=YYYY-MM-DD   (default today)
+app.get('/api/guests/count', auth, allow('staff', 'admin'), wrap(async (req, res) => {
+  const date = req.query.date;
+  if (date && !isDate(date)) return res.status(400).json({ error: 'Date must be YYYY-MM-DD' });
+  const [[d]] = await db.query('SELECT COALESCE(?, CURDATE()) AS d', [date || null]);
+  const day = d.d;
+  const [[inh]] = await db.query(
+    "SELECT COUNT(*) AS bookings, COALESCE(SUM(guests),0) AS guests FROM bookings WHERE deleted_at IS NULL AND status = 'checked_in' AND check_in <= ? AND check_out > ?", [day, day]
+  );
+  const [[arr]] = await db.query(
+    "SELECT COUNT(*) AS bookings, COALESCE(SUM(guests),0) AS guests FROM bookings WHERE deleted_at IS NULL AND status IN ('pending','confirmed','checked_in') AND check_in = ?", [day]
+  );
+  const [[dep]] = await db.query(
+    "SELECT COUNT(*) AS bookings, COALESCE(SUM(guests),0) AS guests FROM bookings WHERE deleted_at IS NULL AND status IN ('checked_in','checked_out') AND check_out = ?", [day]
+  );
+  const [inHouseList] = await db.query(
+    `${BOOKING_SELECT} WHERE b.deleted_at IS NULL AND b.status = 'checked_in' AND b.check_in <= ? AND b.check_out > ? ORDER BY r.name`, [day, day]
+  );
+  res.json({
+    date: day,
+    in_house: { bookings: inh.bookings, guests: Number(inh.guests) },
+    arriving: { bookings: arr.bookings, guests: Number(arr.guests) },
+    departing: { bookings: dep.bookings, guests: Number(dep.guests) },
+    in_house_list: inHouseList,
+  });
+}));
+
+// ---------- 6. SERVICES ----------
+app.get('/api/services', auth, allow(), wrap(async (req, res) => {
+  const [rows] = await db.query('SELECT * FROM services WHERE deleted_at IS NULL ORDER BY name');
+  res.json(rows);
+}));
+
+app.post('/api/services', auth, allow('staff', 'admin'), wrap(async (req, res) => {
+  const name = String(req.body.name || '').trim();
+  const price = Math.round(Number(req.body.price));
+  if (!name) return res.status(400).json({ error: 'Service name is required' });
+  if (!Number.isFinite(price) || price < 0) return res.status(400).json({ error: 'Price must be a number' });
+  const [r] = await db.query('INSERT INTO services (name, price, description) VALUES (?,?,?)', [name, price, String(req.body.description || '')]);
+  const [[row]] = await db.query('SELECT * FROM services WHERE id = ?', [r.insertId]);
+  res.status(201).json(row);
+}));
+
+app.put('/api/services/:id', auth, allow('staff', 'admin'), wrap(async (req, res) => {
+  const price = req.body.price === '' || req.body.price == null ? null : Math.round(Number(req.body.price));
+  if (price !== null && (!Number.isFinite(price) || price < 0)) return res.status(400).json({ error: 'Price must be a number' });
+  await db.query(
+    'UPDATE services SET name = COALESCE(?, name), price = COALESCE(?, price), description = COALESCE(?, description) WHERE id = ? AND deleted_at IS NULL',
+    [req.body.name || null, price, req.body.description ?? null, req.params.id]
+  );
+  const [[row]] = await db.query('SELECT * FROM services WHERE id = ?', [req.params.id]);
+  if (!row) return res.status(404).json({ error: 'Service not found' });
+  res.json(row);
+}));
+
+app.delete('/api/services/:id', auth, allow('staff', 'admin'), wrap(async (req, res) => {
+  await db.query('UPDATE services SET deleted_at = NOW() WHERE id = ?', [req.params.id]);
+  res.json({ ok: true });
+}));
+
+// Services used by a guest (they are added to the bill)
+app.post('/api/bookings/:id/services', auth, allow('staff', 'admin'), wrap(async (req, res) => {
+  const quantity = Math.max(1, Math.floor(Number(req.body.quantity) || 1));
+  const [[svc]] = await db.query('SELECT * FROM services WHERE id = ? AND deleted_at IS NULL', [req.body.service_id]);
+  if (!svc) return res.status(404).json({ error: 'Service not found' });
+  const [[b]] = await db.query('SELECT id, status FROM bookings WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
+  if (!b) return res.status(404).json({ error: 'Booking not found' });
+  if (!['confirmed', 'checked_in'].includes(b.status)) {
+    return res.status(400).json({ error: 'Services can only be added to confirmed or checked-in bookings' });
+  }
+  await db.query(
+    'INSERT INTO booking_services (booking_id, service_id, name, price, quantity, added_by) VALUES (?,?,?,?,?,?)',
+    [b.id, svc.id, svc.name, svc.price, quantity, req.user.id]
+  );
+  res.status(201).json(await getBill(b.id));
+}));
+
+app.delete('/api/bookings/:id/services/:serviceRowId', auth, allow('staff', 'admin'), wrap(async (req, res) => {
+  await db.query('DELETE FROM booking_services WHERE id = ? AND booking_id = ?', [req.params.serviceRowId, req.params.id]);
+  res.json(await getBill(req.params.id));
+}));
+
 // ---------- Chat history ----------
 app.get('/api/messages', auth, allow('guest', 'staff'), async (req, res) => {
   const [rows] = await db.query(
@@ -373,6 +640,9 @@ async function seedUsers() {
   await db.query("UPDATE users SET name = 'Admin' WHERE email = 'admin@resort.com' AND name = 'Resort Admin'");
   await db.query("UPDATE users SET name = 'Staff' WHERE email = 'staff@resort.com' AND name = 'Front Desk Staff'");
   await db.query("UPDATE users SET name = 'Guest' WHERE email = 'guest@resort.com' AND name = 'Sample Guest'");
+  // Repair the default admin account if it was demoted or archived by mistake
+  const [fix] = await db.query("UPDATE users SET role = 'admin', deleted_at = NULL WHERE email = 'admin@resort.com' AND (role <> 'admin' OR deleted_at IS NOT NULL)");
+  if (fix.affectedRows) console.log('Repaired the default admin account (role/archived state)');
   console.log('Default users ready');
 }
 seedUsers().catch((e) => console.warn('User seed skipped:', e.message));
@@ -393,6 +663,54 @@ async function seedRooms() {
   console.log('Seeded sample rooms');
 }
 seedRooms().catch((e) => console.warn('Room seed skipped:', e.message));
+
+// ---------- Auto-create the staff-feature tables (services, booking_services, payments) ----------
+async function ensureStaffTables() {
+  await db.query(`CREATE TABLE IF NOT EXISTS services (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    price DECIMAL(10,2) NOT NULL DEFAULT 0,
+    description VARCHAR(255) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL
+  )`);
+  await db.query(`CREATE TABLE IF NOT EXISTS booking_services (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    booking_id INT NOT NULL,
+    service_id INT NULL,
+    name VARCHAR(100) NOT NULL,
+    price DECIMAL(10,2) NOT NULL,
+    quantity INT NOT NULL DEFAULT 1,
+    added_by INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (booking_id) REFERENCES bookings(id),
+    FOREIGN KEY (added_by) REFERENCES users(id)
+  )`);
+  await db.query(`CREATE TABLE IF NOT EXISTS payments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    booking_id INT NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    method ENUM('cash') NOT NULL DEFAULT 'cash',
+    note VARCHAR(255) NULL,
+    received_by INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (booking_id) REFERENCES bookings(id),
+    FOREIGN KEY (received_by) REFERENCES users(id)
+  )`);
+  const [[{ n }]] = await db.query('SELECT COUNT(*) AS n FROM services');
+  if (n === 0) {
+    await db.query('INSERT INTO services (name, price, description) VALUES ?', [[
+      ['Breakfast', 250, 'Per person'],
+      ['Airport / Port Pickup', 1500, 'One way'],
+      ['Island Hopping Tour', 1800, 'Per person'],
+      ['Massage (1 hour)', 800, 'Per person'],
+      ['Extra Bed', 500, 'Per night'],
+      ['Laundry', 200, 'Per load'],
+    ]]);
+    console.log('Seeded sample services');
+  }
+}
+ensureStaffTables().catch((e) => console.warn('Staff tables setup failed:', e.message));
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));

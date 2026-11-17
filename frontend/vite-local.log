@@ -1,0 +1,153 @@
+
+> resort-frontend@1.0.0 dev
+> vite --host 127.0.0.1
+
+
+  VITE v5.4.21  ready in 2461 ms
+
+  ➜  Local:   http://127.0.0.1:5173/
+  ➜  press h + enter to show help
+Error: The following dependencies are imported but could not be resolved:
+
+  @tanstack/react-query (imported by C:/Users/johnf/Herd/resort-system/frontend/src/admin/data.jsx)
+  recharts (imported by C:/Users/johnf/Herd/resort-system/frontend/src/admin/LiveDashboard.jsx)
+
+Are they installed?
+    at file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:50669:15
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async file:///C:/Users/johnf/Herd/resort-system/frontend/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:50174:26
+1:43:45 PM [vite] Pre-transform error: Failed to resolve import "@tanstack/react-query" from "src/admin/data.jsx". Does the file exist?
+1:43:45 PM [vite] Pre-transform error: Failed to resolve import "@tanstack/react-query" from "src/admin/data.jsx". Does the file exist?
+1:43:45 PM [vite] Pre-transform error: Failed to resolve import "@tanstack/react-query" from "src/admin/data.jsx". Does the file exist?
+1:43:45 PM [vite] Pre-transform error: Failed to resolve import "@tanstack/react-query" from "src/admin/data.jsx". Does the file exist?
+1:43:45 PM [vite] Pre-transform error: Failed to resolve import "@tanstack/react-query" from "src/admin/data.jsx". Does the file exist?
+1:43:45 PM [vite] Pre-transform error: Failed to resolve import "@tanstack/react-query" from "src/admin/data.jsx". Does the file exist?
+1:43:45 PM [vite] Pre-transform error: Failed to resolve import "@tanstack/react-query" from "src/admin/data.jsx". Does the file exist?
+1:43:45 PM [vite] Pre-transform error: Failed to resolve import "@tanstack/react-query" from "src/admin/data.jsx". Does the file exist?
+1:48:27 PM [vite] ✨ new dependencies optimized: @tanstack/react-query
+1:48:27 PM [vite] ✨ optimized dependencies changed. reloading
+1:48:40 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:48:49 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:49:21 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:49:58 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:02 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:04 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:10 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:20 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:31 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:33 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:33 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:33 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:33 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:33 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:34 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:34 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:34 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:34 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:34 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:35 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:35 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:35 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:35 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:35 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:36 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+1:50:37 PM [vite] http proxy error: /api/auth/login
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1135:18)
+    at afterConnectMultiple (node:net:1716:7)
+2:11:08 PM [vite] hmr update /src/App.jsx
+2:11:08 PM [vite] page reload src/main.jsx
+2:11:08 PM [vite] hmr update /src/pages/Bookings.jsx
+2:11:08 PM [vite] hmr update /src/pages/Login.jsx
+2:11:08 PM [vite] hmr update /src/pages/Reports.jsx
+2:11:08 PM [vite] hmr update /src/pages/Rooms.jsx
+2:11:08 PM [vite] hmr update /src/admin/Calendar.jsx
+2:11:08 PM [vite] hmr update /src/admin/data.jsx
+2:11:08 PM [vite] hmr update /src/admin/HeaderAction.jsx
+2:11:08 PM [vite] hmr update /src/admin/NewBooking.jsx
+2:11:08 PM [vite] hmr update /src/admin/Payments.jsx
+2:11:08 PM [vite] hmr update /src/admin/RoomExtras.jsx
+2:11:08 PM [vite] hmr update /src/admin/ui.jsx
+2:11:08 PM [vite] hmr update /src/features/features.css
+2:11:08 PM [vite] hmr update /src/pages/Reports.jsx, /src/pages/Users.jsx, /src/pages/Bookings.jsx, /src/pages/Rooms.jsx
+2:11:08 PM [vite] hmr update /src/features/Notifications.jsx
+2:11:08 PM [vite] hmr update /src/features/Pages.jsx
+2:11:08 PM [vite] hmr update /src/pages/Users.jsx
+6:08:39 PM [vite] hmr update /src/pages/Bookings.jsx
+6:08:39 PM [vite] vite.config.js changed, restarting server...
+Re-optimizing dependencies because lockfile has changed
