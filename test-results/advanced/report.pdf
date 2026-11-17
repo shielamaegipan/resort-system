@@ -15,7 +15,7 @@ endobj
 << /Length 873 >>
 stream
 BT /F1 10 Tf 40 800 Td 15 TL (Resort operational report) Tj
-T* (Period | 2026-11-11 | 2026-11-11) Tj
+T* (Period | 2026-11-17 | 2026-11-17) Tj
 T* (Currency | PHP) Tj
 T* (Net revenue | 2400) Tj
 T* (Received | 2500.5) Tj
@@ -29,7 +29,7 @@ T* (Room nights | 1) Tj
 T* (Registered guests | 1) Tj
 T* () Tj
 T* (Day | Net revenue | Received | Refunds) Tj
-T* (2026-11-11 | 2400 | 2500.5 | 100.5) Tj
+T* (2026-11-17 | 2400 | 2500.5 | 100.5) Tj
 T* () Tj
 T* (Payment method | Received | Refunds | Net) Tj
 T* (cash | 2500.5 | 100.5 | 2400) Tj

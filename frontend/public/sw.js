@@ -7,21 +7,22 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== location.origin) return;
   if (url.pathname.startsWith('/api') || url.pathname.startsWith('/socket.io')) return;
+  if (url.pathname.startsWith('/@') || url.pathname.startsWith('/src/') || url.pathname.startsWith('/node_modules/')) return;
   e.respondWith(
     fetch(req)
       .then((res) => {
         const copy = res.clone();
-        caches.open('resort-v1').then((c) => c.put(req, copy));
+        if (res.ok) e.waitUntil(caches.open('resort-v1').then((c) => c.put(req, copy)));
         return res;
       })
-      .catch(() => caches.match(req).then((r) => r || caches.match('/')))
+      .catch(async () => (await caches.match(req)) || (req.mode === 'navigate' ? await caches.match('/') : null) || Response.error())
   );
 });
 
 self.addEventListener('push', (e) => {
   let data = { title: 'Resort', body: '' };
   try { data = e.data.json(); } catch {}
-  e.waitUntil(self.registration.showNotification(data.title, { body: data.body, icon: '/icon.svg', badge: '/icon.svg' }));
+  e.waitUntil(self.registration.showNotification(data.title || 'Resort', { body: data.body, icon: '/icon.svg', badge: '/icon.svg', tag: data.tag, data: { url: data.url || '/' } }));
 });
 
 self.addEventListener('notificationclick', (e) => {

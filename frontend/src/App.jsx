@@ -3,73 +3,52 @@ import * as API from './api.js';
 import * as PUSH from './push.js';
 import './layout.css';
 import Login from './pages/Login.jsx';
+import GuestHome from './pages/GuestHome.jsx';
+import AboutResort from './pages/AboutResort.jsx';
+import GuestServices from './pages/GuestServices.jsx';
+import BookRoom from './pages/BookRoom.jsx';
+import GuestNotifications from './pages/GuestNotifications.jsx';
+import Rooms from './pages/Rooms.jsx';
+import Bookings from './pages/Bookings.jsx';
+import Today from './pages/Today.jsx';
+import Chat from './pages/Chat.jsx';
+import Users from './pages/Users.jsx';
+import AdminReports from './admin/AdminReports.jsx';
+import AdminActivity from './admin/AdminActivity.jsx';
+import { AdminProvider } from './admin/data.jsx';
+import { FeaturePage } from './features/Pages.jsx';
+import Notifications, { EmployeeSync, NotificationRecord } from './features/Notifications.jsx';
+import { NotificationSession, GuestNotificationBell } from './features/notification-client.jsx';
 
-/* Finds every page file by its name, so a missing page never crashes the app.
-   (pages/admin/Name.jsx is preferred for the admin, then pages/Name.jsx) */
-const pageModules = import.meta.glob('./pages/**/*.jsx', { eager: true });
-const offlineModules = import.meta.glob('./offline.js', { eager: true });
-
-const byName = {};
-for (const [path, mod] of Object.entries(pageModules)) {
-  const name = path.split('/').pop().replace('.jsx', '');
-  const slot = path.includes('/pages/admin/') ? 'admin' : 'main';
-  (byName[name] ||= {})[slot] = mod.default;
-}
-const findPage = (names, role) => {
-  for (const n of names) {
-    const e = byName[n];
-    if (!e) continue;
-    const c = (role === 'admin' && e.admin) || e.main || e.admin;
-    if (c) return c;
-  }
-  return null;
+// What each role can see in the sidebar
+const NAV = {
+  admin: [['rooms', 'Rooms'], ['bookings', 'Bookings'], ['users', 'Users'], ['reports', 'Reports']],
+  staff: [['rooms', 'Rooms'], ['bookings', 'Bookings'], ['today', 'Check-in / Check-out'], ['chat', 'Chat']],
+  guest: [['home', 'Home'], ['about', 'About the Resort'], ['rooms', 'Rooms'], ['services', 'Services'], ['booking', 'Booking'], ['mybookings', 'My Bookings'], ['notifications', 'Notifications'], ['chat', 'Chat']],
 };
-
-// key, label, page file names to look for
-const MENUS = {
-  admin: [
-    ['dashboard', 'Dashboard', ['AdminDashboard', 'Dashboard']],
-    ['rooms', 'Rooms', ['AdminRooms', 'Rooms']],
-    ['bookings', 'Bookings', ['AdminBookings', 'Bookings']],
-    ['users', 'Users', ['Users', 'AdminUsers']],
-    ['reports', 'Reports', ['Reports', 'AdminReports']],
-  ],
-  staff: [
-    ['dashboard', 'Dashboard', ['StaffDashboard']],
-    ['rooms', 'Rooms', ['Rooms']],
-    ['availability', 'Room Availability', ['RoomAvailability']],
-    ['bookings', 'Bookings', ['Bookings']],
-    ['today', 'Check-in / Check-out', ['Today', 'CheckInOut', 'CheckInCheckOut']],
-    ['guests', 'Guest Count', ['GuestCount']],
-    ['payments', 'Cash Payments', ['CashPayments']],
-    ['services', 'Services', ['Services']],
-    ['chat', 'Chat', ['Chat']],
-  ],
-  guest: [
-    ['home', 'Home', ['GuestHome']],
-    ['about', 'About the Resort', ['AboutResort']],
-    ['rooms', 'Rooms', ['GuestRooms', 'Rooms']],
-    ['services', 'Services', ['GuestServices']],
-    ['booking', 'Booking', ['BookRoom']],
-    ['bookings', 'My Bookings', ['Bookings']],
-    ['notifications', 'Notifications', ['GuestNotifications']],
-    ['chat', 'Chat', ['Chat']],
-  ],
+const TITLES = {
+  rooms: 'Rooms', bookings: 'Bookings', mybookings: 'My Bookings',
+  today: "Today's Check-in / Check-out", chat: 'Chat', users: 'Staff Accounts', reports: 'Reports',
 };
+const EXTRA_NAV = [['dashboard','Dashboard','dashboard.view'],['calendar','Calendar','bookings.view'],['payments','Payments','payments.view'],['guests','Guests','guests.view'],['maintenance','Maintenance','maintenance.manage'],['activity','Activity Logs','activity.view'],['settings','Settings','settings.manage']];
 const ROLE_LABEL = { admin: 'Admin', staff: 'Staff', guest: 'Guest' };
-
-const Bell = ({ onClick }) => (
-  <button className="shell-bell" title="Enable notifications" aria-label="Enable notifications" onClick={onClick}>
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0" /></svg>
-  </button>
-);
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [page, setPage] = useState('home');
+  const [page, setPage] = useState('rooms');
+  const [bookingFilter, setBookingFilter] = useState(null);
   const [toast, setToast] = useState('');
   const [headerAction, setHeaderAction] = useState(null);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [notificationOpen,setNotificationOpen]=useState(false);
+  const [related,setRelated]=useState(null);
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!adminMenuOpen) return;
+    const closeOnEscape = (event) => { if (event.key === 'Escape') setAdminMenuOpen(false); };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [adminMenuOpen]);
 
   const notice = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(''), 3500); }, []);
 
@@ -78,12 +57,8 @@ export default function App() {
 
   // Send bookings that were saved while offline
   useEffect(() => {
-    if (!user) return;
-    const flush = API.flushPending || Object.values(offlineModules)[0]?.flushPending;
-    if (!flush) return;
-    const run = async () => {
-      try { const n = await flush(); if (n) { notice(`${n} offline booking(s) synced`); setPage('bookings'); } } catch { /* offline */ }
-    };
+    if (!user || user.role === 'admin') return;
+    const run = async () => { try { const n = await API.flushPending(); if (n) { notice(`${n} offline booking(s) synced`); setPage(user.role === 'guest' ? 'mybookings' : 'bookings'); } } catch (error) { notice(error.message); } };
     run();
     window.addEventListener('online', run);
     const onMsg = (e) => e.data?.type === 'flush-bookings' && run();
@@ -91,90 +66,84 @@ export default function App() {
     return () => { window.removeEventListener('online', run); navigator.serviceWorker?.removeEventListener('message', onMsg); };
   }, [user, notice]);
 
-  if (!user) {
-    return <Login onLogin={(u, t) => { API.setToken(t); setUser(u); setPage(u.role === 'guest' ? 'home' : 'dashboard'); }} />;
-  }
+  if (!user) return <Login onLogin={(u, t) => { API.setToken(t); setUser(u); setPage(u.role === 'admin' && u.permissions?.includes('dashboard.view') ? 'dashboard' : u.role === 'guest' ? 'home' : 'rooms'); }} />;
 
-  const role = MENUS[user.role] ? user.role : 'guest';
-  const items = MENUS[role].map(([key, label, names]) => ({ key, label, Comp: findPage(names, role) })).filter((i) => i.Comp);
-  const current = items.find((i) => i.key === page) || items[0];
-
-  const goTo = (key) => {
-    if (!items.some((i) => i.key === key)) return;
-    setHeaderAction(null); setMenuOpen(false); setPage(key);
+  const logout = async () => {
+    try { await PUSH.disablePushForSession(); }
+    catch { notice('Could not disconnect device notifications. Please try logging out again.'); return; }
+    API.setToken(null); setUser(null); setAdminMenuOpen(false);
   };
-  const logout = () => { API.setToken(null); setUser(null); setMenuOpen(false); };
+  const employee=user.role!=='guest';
+  const can=p=>user.permissions?.includes(p);
+  const items = employee ? [...(NAV[user.role]||[]).filter(([key])=>key==='rooms'?can('rooms.view'):key==='bookings'||key==='today'?can('bookings.manage'):key==='users'?can('staff.manage'):key==='reports'?can('reports.view'):key==='chat'?user.permission_role==='receptionist':false),...EXTRA_NAV.filter(([, ,permission])=>can(permission))] : NAV.guest;
+  if (user.role === 'admin') items.sort((a, b) => (a[0] === 'dashboard' ? -1 : b[0] === 'dashboard' ? 1 : 0));
+  const goTo = (key, filters = null) => { setAdminMenuOpen(false); setBookingFilter(key === 'bookings' ? filters : null); setHeaderAction(null); setPage(user.role === 'guest' && key === 'bookings' ? 'mybookings' : key); };
+  const props = { user, notice, setHeaderAction, goTo, initialFilters: bookingFilter };
+  const isStaff = user.role === 'staff';
+  const isGuest = user.role === 'guest';
+
   const bell = async () => {
     try { await PUSH.enablePush(); notice('Notifications enabled'); } catch (e) { notice(e.message); }
   };
-  const Page = current?.Comp;
-  const pageEl = Page ? <Page user={user} notice={notice} goTo={goTo} setHeaderAction={setHeaderAction} /> : <p>Nothing to show.</p>;
+  const bellLabel = employee?'Notifications':'Enable notifications';
 
-  const brand = (
-    <div className="shell-brand"><img src="/icon.svg" alt="" width="40" height="40" /><span>Resort</span></div>
-  );
-
-  /* ---------- Guest: menu on top ---------- */
-  if (role === 'guest') {
+  if (isGuest) {
+    const guestPages = { home: GuestHome, about: AboutResort, rooms: Rooms, services: GuestServices, booking: BookRoom, mybookings: Bookings, notifications: GuestNotifications, chat: Chat };
+    const GuestPage = guestPages[page] || GuestHome;
     return (
       <div className="shell shell-top">
-        <header className="top">
-          <div className="top-in">
-            {brand}
-            <nav className="top-nav" aria-label="Main">
-              {items.map((i) => (
-                <button key={i.key} className={`top-link${current?.key === i.key ? ' on' : ''}`} aria-current={current?.key === i.key ? 'page' : undefined} onClick={() => goTo(i.key)}>{i.label}</button>
-              ))}
-            </nav>
-            <div className="top-me">
-              <strong>{user.name}</strong>
-              <button className="shell-logout" onClick={logout}>Log out</button>
-            </div>
-          </div>
-        </header>
-        <div className="shell-body" role="main">
-          <div className="shell-tools">{headerAction}<Bell onClick={bell} /></div>
-          {pageEl}
-        </div>
+        <NotificationSession user={user}/>
+        <header className="top"><div className="top-in">
+          <div className="shell-brand"><img src="/icon.svg" alt="" width="40" height="40" /><span>Resort</span></div>
+          <nav className="top-nav" aria-label="Main">{items.map(([key, label]) => <button key={key} className={`top-link${page === key ? ' on' : ''}`} aria-current={page === key ? 'page' : undefined} onClick={() => goTo(key)}>{label}</button>)}</nav>
+          <div className="top-me"><strong>{user.name}</strong><button className="shell-logout" onClick={logout}>Log out</button></div>
+        </div></header>
+        <main className="shell-body"><div className="shell-tools">{headerAction}<GuestNotificationBell onClick={() => goTo('notifications')}/></div><GuestPage {...props} /></main>
         {toast && <div className="shell-toast" role="status">{toast}</div>}
       </div>
     );
   }
 
-  /* ---------- Admin and staff: menu on the left ---------- */
-  return (
-    <div className="shell shell-side">
-      <aside className={`side${menuOpen ? ' open' : ''}`}>
-        {brand}
-        <nav className="side-nav" aria-label="Main">
-          {items.map((i) => (
-            <button key={i.key} className={`side-link${current?.key === i.key ? ' on' : ''}`} aria-current={current?.key === i.key ? 'page' : undefined} onClick={() => goTo(i.key)}>
-              {i.label}
-            </button>
+  const layout = (
+    <div className={`layout employee-shell${user.role === 'admin' ? ' admin-shell' : ''}`}>
+      <NotificationSession user={user}/>
+      {user.role === 'admin' && adminMenuOpen && <button className="admin-nav-scrim" aria-label="Close navigation" onClick={() => setAdminMenuOpen(false)} />}
+      <aside id="employee-navigation" className={`sidebar${adminMenuOpen ? ' is-open' : ''}`}>
+        <div className="brand"><img src="/icon.svg" alt="" width="34" height="34" /><span>Resort</span></div>
+        <nav>
+          {items.map(([key, label]) => (
+            <button key={key} className={page === key ? 'active' : ''} aria-current={page === key ? 'page' : undefined} onClick={() => goTo(key)}>{label}</button>
           ))}
         </nav>
+        <div className="me">
+          <strong>{user.name}</strong>
+          {user.name.toLowerCase() !== ROLE_LABEL[user.role].toLowerCase() && <span>{ROLE_LABEL[user.role]}</span>}
+          <button className="ghost-light" onClick={logout}>Log out</button>
+        </div>
       </aside>
-      {menuOpen && <div className="side-scrim" onClick={() => setMenuOpen(false)} />}
-      <div className="side-main">
-        <header className="side-top">
-          <button className="burger" aria-label="Open menu" onClick={() => setMenuOpen(true)}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
-          </button>
-          <span className="who"><strong>{user.name}</strong>{user.name.toLowerCase() !== ROLE_LABEL[role].toLowerCase() && <span> · {ROLE_LABEL[role]}</span>}</span>
-          <div className="side-top-actions">
-            <Bell onClick={bell} />
-            <button className="side-logout" onClick={logout}>Log out</button>
+      <main className="content">
+        <header>
+          {user.role === 'admin' && <button className="admin-nav-toggle" aria-label="Toggle navigation" aria-controls="employee-navigation" aria-expanded={adminMenuOpen} onClick={() => setAdminMenuOpen(!adminMenuOpen)}><span aria-hidden="true">☰</span></button>}
+          <h1>{TITLES[page]||EXTRA_NAV.find(([key])=>key===page)?.[1]}</h1>
+          <div className="header-actions">
+            {headerAction}
+            <span className="notification-anchor"><button className="bell" title={bellLabel} onClick={employee?()=>setNotificationOpen(!notificationOpen):bell} aria-label={bellLabel} aria-expanded={employee?notificationOpen:undefined}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>
+            </button>{employee&&<Notifications user={user} open={notificationOpen} onClose={()=>setNotificationOpen(false)} onRecord={setRelated} goTo={goTo}/>}</span>
           </div>
         </header>
-        <div className="shell-body" role="main">
-          <div className="shell-head">
-            <h1>{current?.label}</h1>
-            <div className="head-actions">{headerAction}</div>
-          </div>
-          {pageEl}
-        </div>
-      </div>
-      {toast && <div className="shell-toast" role="status">{toast}</div>}
+        {page === 'rooms' && <Rooms {...props} />}
+        {(page === 'bookings' || (page === 'mybookings' && isGuest)) && <Bookings {...props} />}
+        {page === 'today' && isStaff && <Today {...props} />}
+        {page === 'chat' && user.role !== 'admin' && <Chat {...props} />}
+        {page === 'users' && user.role === 'admin' && <Users {...props} />}
+        {page === 'reports' && user.role === 'admin' && <AdminReports />}
+        {page === 'activity' && user.role === 'admin' && can('activity.view') && <AdminActivity/>}
+        {employee&&!(page === 'activity' && user.role === 'admin')&&EXTRA_NAV.some(([key])=>key===page)&&items.some(([key])=>key===page)&&<FeaturePage page={page} user={user} goTo={goTo}/>}
+      </main>
+      {related&&employee&&<NotificationRecord record={related} user={user} onClose={()=>setRelated(null)} goTo={goTo}/>}
+      {toast && <div className="toast">{toast}</div>}
     </div>
   );
+  return employee?<AdminProvider key={user.id}><EmployeeSync user={user} onUser={u=>{setUser(u);setPage('rooms');}} onLogout={logout}/>{layout}</AdminProvider>:layout;
 }
