@@ -181,3 +181,5 @@ The new tables (`services`, `booking_services`, `payments`) are created automati
 ---
 
 Don't forget to add `noeldimailig` as a collaborator on the GitHub repo.
+
+Setup ni Daculo: nai-clone at na-configure na ang local environment.
