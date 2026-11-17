@@ -1,43 +1,3 @@
-<<<<<<< HEAD
-  import { useEffect, useState, useCallback } from 'react';
-  import { api } from '../api.js';
-  import { cacheGet, cacheSet, pendingBookings } from '../db.js';
-  import { useConfirm } from '../components/Confirm.jsx';
-
-  export const peso = (n) => '₱' + Math.round(Number(n)).toLocaleString('en-PH');
-  export const LABEL = { pending: 'Pending', confirmed: 'Confirmed', checked_in: 'Checked in', checked_out: 'Checked out', cancelled: 'Cancelled' };
-
-  // Buttons shown for a booking, depending on who is looking and its status
-  export function actionsFor(role, status) {
-    if (role === 'guest') return status === 'pending' ? [['cancelled', 'Cancel']] : []; // no cancel once confirmed
-    if (status === 'pending') return [['confirmed', 'Confirm'], ['cancelled', 'Decline']];
-    if (status === 'confirmed') return [['checked_in', 'Check in'], ['cancelled', 'Cancel']];
-    if (status === 'checked_in') return [['checked_out', 'Check out']];
-    return [];
-  }
-
-  export default function Bookings({ user, notice }) {
-    const [rows, setRows] = useState([]);
-    const [archived, setArchived] = useState([]);
-    const [queued, setQueued] = useState([]);
-    const [tab, setTab] = useState('active');
-    const [ask, dialog] = useConfirm();
-    const isGuest = user.role === 'guest';
-
-    const load = useCallback(async () => {
-      try {
-        const r = await api('/bookings');
-        setRows(r); cacheSet('bookings', r);
-        if (user.role === 'admin') setArchived(await api('/bookings/archived'));
-      } catch (e) {
-        if (!e.status) setRows((await cacheGet('bookings')) || []);
-        else notice(e.message);
-      }
-      if (isGuest) setQueued(await pendingBookings());
-    }, [user.role, isGuest, notice]);
-
-    useEffect(() => { load(); }, [load]);
-=======
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../api.js';
 import { cacheGet, cacheSet, pendingBookings } from '../db.js';
@@ -89,7 +49,6 @@ export default function Bookings({ user, notice, goTo, initialFilters }) {
 
   useEffect(() => { load(); }, [load]);
   useLiveRefresh(load);
->>>>>>> Ef-branch
 
     const setStatus = async (b, status) => {
       if (status === 'cancelled') {
@@ -126,49 +85,6 @@ export default function Bookings({ user, notice, goTo, initialFilters }) {
 
     const list = tab === 'archived' ? archived : rows;
 
-<<<<<<< HEAD
-    return (
-      <>
-        {user.role === 'admin' && (
-          <div className="tabs">
-            <button className={tab === 'active' ? 'on' : ''} onClick={() => setTab('active')}>Active</button>
-            <button className={tab === 'archived' ? 'on' : ''} onClick={() => setTab('archived')}>Archived ({archived.length})</button>
-          </div>
-        )}
-        {queued.length > 0 && <p className="banner">{queued.length} booking(s) saved offline. They will be sent when you are back online.</p>}
-        <div className="card table-wrap">
-          <table>
-            <thead><tr><th>Guest</th><th>Room</th><th>Dates</th><th>Guests</th><th>Total</th><th>Status</th><th></th></tr></thead>
-            <tbody>
-              {list.map((b) => (
-                <tr key={b.id}>
-                  <td><strong>{b.guest_name}</strong><div className="muted">{b.guest_contact}</div></td>
-                  <td>{b.room_name}</td>
-                  <td>{b.check_in} → {b.check_out}</td>
-                  <td>{b.guests}</td>
-                  <td>{peso(b.total_price)}</td>
-                  <td><span className={`pill s-${b.status}`}>{LABEL[b.status]}</span></td>
-                  <td className="actions">
-                    {tab === 'archived' ? <button onClick={() => restore(b)}>Restore</button> : (
-                      <>
-                        {actionsFor(user.role, b.status).map(([s, label]) => (
-                          <button key={s} className={s === 'cancelled' ? '' : 'primary'} onClick={() => setStatus(b, s)}>{label}</button>
-                        ))}
-                        {!isGuest && <button className="danger" onClick={() => remove(b)}>Delete</button>}
-                      </>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {!list.length && <tr><td colSpan="7" className="muted">No bookings yet.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-        {dialog}
-      </>
-    );
-  }
-=======
   return (
     <>
       {user.role === 'admin' && (
@@ -217,4 +133,3 @@ export default function Bookings({ user, notice, goTo, initialFilters }) {
     </>
   );
 }
->>>>>>> Ef-branch
