@@ -18,6 +18,7 @@ import AdminActivity from './admin/AdminActivity.jsx';
 import { AdminProvider } from './admin/data.jsx';
 import { FeaturePage } from './features/Pages.jsx';
 import Notifications, { EmployeeSync, NotificationRecord } from './features/Notifications.jsx';
+import { NotificationSession, GuestNotificationBell } from './features/notification-client.jsx';
 
 // What each role can see in the sidebar
 const NAV = {
@@ -40,6 +41,14 @@ export default function App() {
   const [headerAction, setHeaderAction] = useState(null);
   const [notificationOpen,setNotificationOpen]=useState(false);
   const [related,setRelated]=useState(null);
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!adminMenuOpen) return;
+    const closeOnEscape = (event) => { if (event.key === 'Escape') setAdminMenuOpen(false); };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [adminMenuOpen]);
 
   const notice = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(''), 3500); }, []);
 
@@ -59,12 +68,16 @@ export default function App() {
 
   if (!user) return <Login onLogin={(u, t) => { API.setToken(t); setUser(u); setPage(u.role === 'admin' && u.permissions?.includes('dashboard.view') ? 'dashboard' : u.role === 'guest' ? 'home' : 'rooms'); }} />;
 
-  const logout = () => { API.setToken(null); setUser(null); };
+  const logout = async () => {
+    try { await PUSH.disablePushForSession(); }
+    catch { notice('Could not disconnect device notifications. Please try logging out again.'); return; }
+    API.setToken(null); setUser(null); setAdminMenuOpen(false);
+  };
   const employee=user.role!=='guest';
   const can=p=>user.permissions?.includes(p);
   const items = employee ? [...(NAV[user.role]||[]).filter(([key])=>key==='rooms'?can('rooms.view'):key==='bookings'||key==='today'?can('bookings.manage'):key==='users'?can('staff.manage'):key==='reports'?can('reports.view'):key==='chat'?user.permission_role==='receptionist':false),...EXTRA_NAV.filter(([, ,permission])=>can(permission))] : NAV.guest;
   if (user.role === 'admin') items.sort((a, b) => (a[0] === 'dashboard' ? -1 : b[0] === 'dashboard' ? 1 : 0));
-  const goTo = (key, filters = null) => { setBookingFilter(key === 'bookings' ? filters : null); setHeaderAction(null); setPage(user.role === 'guest' && key === 'bookings' ? 'mybookings' : key); };
+  const goTo = (key, filters = null) => { setAdminMenuOpen(false); setBookingFilter(key === 'bookings' ? filters : null); setHeaderAction(null); setPage(user.role === 'guest' && key === 'bookings' ? 'mybookings' : key); };
   const props = { user, notice, setHeaderAction, goTo, initialFilters: bookingFilter };
   const isStaff = user.role === 'staff';
   const isGuest = user.role === 'guest';
@@ -79,24 +92,27 @@ export default function App() {
     const GuestPage = guestPages[page] || GuestHome;
     return (
       <div className="shell shell-top">
+        <NotificationSession user={user}/>
         <header className="top"><div className="top-in">
           <div className="shell-brand"><img src="/icon.svg" alt="" width="40" height="40" /><span>Resort</span></div>
           <nav className="top-nav" aria-label="Main">{items.map(([key, label]) => <button key={key} className={`top-link${page === key ? ' on' : ''}`} aria-current={page === key ? 'page' : undefined} onClick={() => goTo(key)}>{label}</button>)}</nav>
           <div className="top-me"><strong>{user.name}</strong><button className="shell-logout" onClick={logout}>Log out</button></div>
         </div></header>
-        <main className="shell-body"><div className="shell-tools">{headerAction}<button className="shell-bell" onClick={bell} aria-label="Enable notifications">Notifications</button></div><GuestPage {...props} /></main>
+        <main className="shell-body"><div className="shell-tools">{headerAction}<GuestNotificationBell onClick={() => goTo('notifications')}/></div><GuestPage {...props} /></main>
         {toast && <div className="shell-toast" role="status">{toast}</div>}
       </div>
     );
   }
 
   const layout = (
-    <div className={employee?'layout employee-shell':'layout'}>
-      <aside className="sidebar">
+    <div className={`layout employee-shell${user.role === 'admin' ? ' admin-shell' : ''}`}>
+      <NotificationSession user={user}/>
+      {user.role === 'admin' && adminMenuOpen && <button className="admin-nav-scrim" aria-label="Close navigation" onClick={() => setAdminMenuOpen(false)} />}
+      <aside id="employee-navigation" className={`sidebar${adminMenuOpen ? ' is-open' : ''}`}>
         <div className="brand"><img src="/icon.svg" alt="" width="34" height="34" /><span>Resort</span></div>
         <nav>
           {items.map(([key, label]) => (
-            <button key={key} className={page === key ? 'active' : ''} onClick={() => goTo(key)}>{label}</button>
+            <button key={key} className={page === key ? 'active' : ''} aria-current={page === key ? 'page' : undefined} onClick={() => goTo(key)}>{label}</button>
           ))}
         </nav>
         <div className="me">
@@ -107,6 +123,7 @@ export default function App() {
       </aside>
       <main className="content">
         <header>
+          {user.role === 'admin' && <button className="admin-nav-toggle" aria-label="Toggle navigation" aria-controls="employee-navigation" aria-expanded={adminMenuOpen} onClick={() => setAdminMenuOpen(!adminMenuOpen)}><span aria-hidden="true">☰</span></button>}
           <h1>{TITLES[page]||EXTRA_NAV.find(([key])=>key===page)?.[1]}</h1>
           <div className="header-actions">
             {headerAction}

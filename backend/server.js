@@ -13,7 +13,7 @@ const { Server } = require('socket.io');
 const db = require('./db');
 const { auth, verifyToken } = require('./middleware/auth');
 const { requirePermission, audit, profile } = require('./lib/permissions');
-const { router: pushRouter, notify } = require('./routes/push');
+const { router: pushRouter } = require('./routes/push');
 
 const app = express();
 const server = http.createServer(app);
@@ -67,7 +67,7 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 
 // Existing JSON response shapes are preserved. Successful writes invalidate Admin caches.
 app.use('/api', (req, res, next) => {
-  const match = /^\/(rooms|bookings|users)(?:\/(\d+))?(?:\/(status|restore|image))?$/.exec(req.path);
+  const match = /^\/(rooms|bookings|users)(?:\/(\d+))?(?:\/(status|restore|image|check-in|check-out))?$/.exec(req.path);
   if (match && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     const send = res.json.bind(res);
     res.json = (body) => {
@@ -82,6 +82,7 @@ app.use('/api', (req, res, next) => {
   next();
 });
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/ops', require('./routes/operations'));
 app.use('/api/advanced', require('./routes/advanced'));
 app.use('/api/auth', require('./routes/auth'));
@@ -236,7 +237,6 @@ app.get('/api/bookings/archived', auth, allow('admin'), async (req, res) => {
 
 app.post('/api/bookings', auth, allow('guest','admin','staff'), async (req, res) => {
   const row = await bookings.create(req.user.id, req.body);
-  notify({ exceptUserId: req.user.id, roles: ['admin', 'staff'], title: 'New booking', body: `${row.guest_name} - ${row.room_name}` }).catch(console.error);
   res.status(201).json(row);
 });
 
@@ -617,7 +617,7 @@ io.on('connection', (socket) => {
       sender_id: socket.user.id,
       sender_name: socket.user.name,
     });
-    notify({ exceptUserId: socket.user.id, roles: ['guest', 'staff'], title: socket.user.name, body: text }).catch(console.error);
+    realtime.publishChat(current, text, r.insertId).catch(error => console.error('Chat notification failed:', error.message));
     } catch(error){console.error('Chat delivery failed:',error.message);socket.emit('chat:error','Message could not be sent');}
   });
 });

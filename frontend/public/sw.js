@@ -22,7 +22,7 @@ self.addEventListener('fetch', (e) => {
 self.addEventListener('push', (e) => {
   let data = { title: 'Resort', body: '' };
   try { data = e.data.json(); } catch {}
-  e.waitUntil(self.registration.showNotification(data.title, { body: data.body, icon: '/icon.svg', badge: '/icon.svg' }));
+  e.waitUntil(self.registration.showNotification(data.title || 'Resort', { body: data.body, icon: '/icon.svg', badge: '/icon.svg', tag: data.tag, data: { url: data.url || '/' } }));
 });
 
 self.addEventListener('notificationclick', (e) => {
