@@ -11,7 +11,7 @@ const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/push.js'
   .replaceAll('import.meta.env.DEV', 'true')
   .replaceAll('import.meta.env.VITE_VAPID_PUBLIC_KEY', 'undefined')
   .replaceAll('export async function', 'async function')
-  + '\nglobalThis.client = {enablePush,getPushStatus,sendTestPush,disablePushForSession};';
+  + '\nglobalThis.client = {enablePush,ensurePushEnabled,getPushStatus,sendTestPush,disablePushForSession};';
 
 function fixture() {
   const calls = [];
@@ -29,8 +29,9 @@ function fixture() {
   const worker = { register: async (...args) => { calls.push({ register: args }); return reg; }, ready: Promise.resolve(reg), getRegistration: async () => reg };
   const notification = { get permission() { return permission; }, requestPermission: async () => permission };
   const context = {
-    window: { isSecureContext: true, PushManager: {}, Notification: notification },
+    window: { isSecureContext: true, PushManager: {}, Notification: notification, dispatchEvent() {} },
     navigator: { serviceWorker: worker }, Notification: notification,
+    Event,
     Uint8Array, atob: text => Buffer.from(text, 'base64').toString('binary'),
     setTimeout: fn => setTimeout(fn, 30), clearTimeout,
     testApi: async (url, options) => {
@@ -69,5 +70,26 @@ async function main() {
   const insecure = fixture(); insecure.context.window.isSecureContext = false;
   await assert.rejects(insecure.client.enablePush(), /localhost or HTTPS/);
   console.log('PASS browser subscription lifecycle, device status/test request, logout cleanup, permission rejection, provider denial, timeout, and secure-origin guard');
+  const auto = fixture();
+  let prompts = 0;
+  auto.context.Notification.requestPermission = async () => { prompts++; return 'granted'; };
+  assert.equal(await auto.client.ensurePushEnabled(), true);
+  assert.equal(prompts, 0, 'Previously granted permission must not prompt again');
+  await auto.client.disablePushForSession();
+  assert.equal(await auto.client.ensurePushEnabled(), true, 'Login must recreate the subscription after logout cleanup');
+  const firstLogin = fixture(); firstLogin.setPermission('default');
+  let firstPrompts = 0;
+  firstLogin.context.Notification.requestPermission = async () => { firstPrompts++; firstLogin.setPermission('granted'); return 'granted'; };
+  assert.equal(await firstLogin.client.ensurePushEnabled(), false, 'Background retry must not prompt for permission');
+  await Promise.all([firstLogin.client.ensurePushEnabled({requestPermission:true}),firstLogin.client.ensurePushEnabled({requestPermission:true})]);
+  assert.equal(firstPrompts,1,'Concurrent automatic setup must show only one browser permission prompt');
+  assert.equal(firstLogin.calls.filter(call=>call.url==='/push/subscribe').length,1,'Concurrent automatic setup must register only once');
+  const blocked = fixture(); blocked.setPermission('denied');
+  assert.equal(await blocked.client.ensurePushEnabled({requestPermission:true}),false);
+  assert.equal(blocked.calls.length,0,'Blocked permission must not trigger registration or requests');
+  const unsupported = fixture(); unsupported.context.window.isSecureContext=false;
+  assert.equal(await unsupported.client.ensurePushEnabled({requestPermission:true}),false);
+  console.log('PASS automatic first-login permission flow, silent restoration after Allow, resubscription after logout, concurrent setup deduplication, and blocked/unsupported guards');
+
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

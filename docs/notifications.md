@@ -6,7 +6,7 @@ The current `feature/guest/notifications` working tree supports persistent inbox
 
 1. Restart the existing backend terminal with `npm --prefix backend start` (stop its previous process first).
 2. Open the frontend, sign in, and open Notifications.
-3. Click **Enable push notifications** and allow notifications in the browser. Employees can enable push from the bell dropdown; guests can enable it from their Notifications page.
+3. Push setup starts automatically after login. Allow the browser permission prompt once; later logins and reconnections restore push without prompting when permission is already granted. If the browser blocks an automatic permission prompt, use **Enable push notifications** in the bell dropdown (employees) or Notifications page (guests). Blocked permission must be changed in browser site settings.
 4. Use a separate staff session to confirm a guest booking. The owner should receive an unread inbox record without reloading. An unrelated guest must not receive that booking notice.
 
 The ignored `backend/.env` now contains locally generated VAPID keys. Do not commit the private key. Other deployments must configure their own environment keys and restart the backend. Use HTTPS outside localhost. The inbox and live socket updates do not require browser push permission.

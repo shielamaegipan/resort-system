@@ -57,6 +57,14 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
+    const restorePush = () => { PUSH.ensurePushEnabled().catch(() => {}); };
+    restorePush();
+    window.addEventListener('online', restorePush);
+    return () => window.removeEventListener('online', restorePush);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user) return;
     const openNotifications = () => {
       if (user.role === 'guest') setPage('notifications');
       else setNotificationOpen(true);
@@ -83,7 +91,7 @@ export default function App() {
     return () => { window.removeEventListener('online', run); navigator.serviceWorker?.removeEventListener('message', onMsg); };
   }, [user, notice]);
 
-  if (!user) return <Login onLogin={(u, t) => { API.setToken(t); setUser(u); setPage(u.role === 'admin' && u.permissions?.includes('dashboard.view') ? 'dashboard' : u.role === 'guest' ? 'home' : 'rooms'); }} />;
+  if (!user) return <Login onLogin={(u, t) => { API.setToken(t); setUser(u); setPage(u.role === 'admin' && u.permissions?.includes('dashboard.view') ? 'dashboard' : u.role === 'guest' ? 'home' : 'rooms'); PUSH.ensurePushEnabled({ requestPermission: true }).catch(() => {}); }} />;
 
   const logout = async () => {
     try { await PUSH.disablePushForSession(); }
