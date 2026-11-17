@@ -25,6 +25,31 @@ async function migrate() {
     `CREATE TABLE IF NOT EXISTS resort_settings (id INT PRIMARY KEY, name VARCHAR(150) NOT NULL DEFAULT 'Resort', contact VARCHAR(500) NOT NULL DEFAULT '') ENGINE=InnoDB`
   ];
   for (const sql of definitions) await db.query(sql);
+  // schema.sql and older installations have the original cash-only payment table.
+  // CREATE TABLE IF NOT EXISTS does not upgrade that table's columns.
+  const [paymentColumns] = await db.query('SHOW COLUMNS FROM payments');
+  const legacyPayments = paymentColumns.some(column => column.Field === 'received_by');
+  const missingStatus = !paymentColumns.some(column => column.Field === 'status');
+  for (const [name, definition] of [
+    ['status', "ENUM('pending','submitted','verified','rejected','refunded','partially_refunded') NOT NULL DEFAULT 'verified'"],
+    ['transaction_reference', 'VARCHAR(150) NULL'], ['notes', 'TEXT NULL'],
+    ['evidence_file', 'VARCHAR(255) NULL'], ['recorded_by', 'INT NULL'],
+    ['verified_by', 'INT NULL'], ['verified_at', 'DATETIME NULL'],
+    ['refunded_amount', 'DECIMAL(10,2) NOT NULL DEFAULT 0'],
+    ['idempotency_key', 'VARCHAR(100) NULL'], ['request_hash', 'CHAR(64) NULL']
+  ]) await add('payments', name, definition);
+  const methodColumn = paymentColumns.find(column => column.Field === 'method');
+  if (!methodColumn.Type.includes('bank_transfer')) await db.query("ALTER TABLE payments MODIFY method ENUM('cash','gcash','maya','bank_transfer') NOT NULL DEFAULT 'cash'");
+  if (legacyPayments) {
+    await db.query('UPDATE payments SET recorded_by=received_by WHERE recorded_by IS NULL');
+    if (paymentColumns.some(column => column.Field === 'note')) await db.query('UPDATE payments SET notes=note WHERE notes IS NULL AND note IS NOT NULL');
+    // New writes use recorded_by; keep the historical field without requiring it.
+    if (paymentColumns.find(column => column.Field === 'received_by').Null === 'NO') await db.query('ALTER TABLE payments MODIFY received_by INT NULL');
+    if (missingStatus) await db.query("UPDATE payments SET verified_at=created_at,verified_by=recorded_by WHERE status='verified' AND verified_at IS NULL");
+  }
+  await db.query("ALTER TABLE payments ALTER COLUMN status SET DEFAULT 'pending'");
+  const [paymentKeys] = await db.query('SHOW INDEX FROM payments');
+  if (!paymentKeys.some(index => index.Column_name === 'idempotency_key' && index.Non_unique === 0)) await db.query('CREATE UNIQUE INDEX payment_idempotency_key ON payments(idempotency_key)');
   const [indexes]=await db.query("SHOW INDEX FROM payments WHERE Key_name='payment_provider_reference'");
   if(!indexes.length)await db.query('CREATE UNIQUE INDEX payment_provider_reference ON payments(method,transaction_reference)');
   await db.query('INSERT IGNORE INTO resort_settings(id) VALUES (1)');

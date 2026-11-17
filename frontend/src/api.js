@@ -4,6 +4,27 @@ const KEY = 'resort_token';
 export const getToken = () => localStorage.getItem(KEY);
 export const setToken = (t) => (t ? localStorage.setItem(KEY, t) : localStorage.removeItem(KEY));
 
+// Safety net: make sure every call to /api carries the login token,
+// even if a page calls fetch() directly instead of using api().
+if (typeof window !== 'undefined' && !window.__resortFetchPatched) {
+  window.__resortFetchPatched = true;
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    try {
+      const url = typeof input === 'string' ? input : input && input.url;
+      if (url && url.startsWith('/api/') && getToken()) {
+        const headers = new Headers(init.headers || (typeof input !== 'string' ? input.headers : undefined));
+        const current = headers.get('Authorization') || '';
+        if (!/^Bearer\s+[\w-]+\.[\w-]+\.[\w-]+$/.test(current)) {
+          headers.set('Authorization', 'Bearer ' + getToken());
+          init = { ...init, headers };
+        }
+      }
+    } catch {}
+    return nativeFetch(input, init);
+  };
+}
+
 export async function api(path, { method = 'GET', body } = {}) {
   const res = await fetch('/api' + path, {
     method,

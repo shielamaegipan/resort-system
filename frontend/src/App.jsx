@@ -1,7 +1,13 @@
-import { useEffect, useState, useCallback } from 'react';
-import { setToken, flushPending } from './api.js';
-import { enablePush } from './push.js';
+import { useCallback, useEffect, useState } from 'react';
+import * as API from './api.js';
+import * as PUSH from './push.js';
+import './layout.css';
 import Login from './pages/Login.jsx';
+import GuestHome from './pages/GuestHome.jsx';
+import AboutResort from './pages/AboutResort.jsx';
+import GuestServices from './pages/GuestServices.jsx';
+import BookRoom from './pages/BookRoom.jsx';
+import GuestNotifications from './pages/GuestNotifications.jsx';
 import Rooms from './pages/Rooms.jsx';
 import Bookings from './pages/Bookings.jsx';
 import Today from './pages/Today.jsx';
@@ -17,7 +23,7 @@ import Notifications, { EmployeeSync, NotificationRecord } from './features/Noti
 const NAV = {
   admin: [['rooms', 'Rooms'], ['bookings', 'Bookings'], ['users', 'Users'], ['reports', 'Reports']],
   staff: [['rooms', 'Rooms'], ['bookings', 'Bookings'], ['today', 'Check-in / Check-out'], ['chat', 'Chat']],
-  guest: [['rooms', 'Rooms'], ['mybookings', 'My Bookings'], ['chat', 'Chat']],
+  guest: [['home', 'Home'], ['about', 'About the Resort'], ['rooms', 'Rooms'], ['services', 'Services'], ['booking', 'Booking'], ['mybookings', 'My Bookings'], ['notifications', 'Notifications'], ['chat', 'Chat']],
 };
 const TITLES = {
   rooms: 'Rooms', bookings: 'Bookings', mybookings: 'My Bookings',
@@ -37,13 +43,13 @@ export default function App() {
 
   const notice = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(''), 3500); }, []);
 
-  // Always start at the login page: forget any saved session when the app is opened
-  useEffect(() => { setToken(null); }, []);
+  // Always start on the login page
+  useEffect(() => { API.setToken?.(null); }, []);
 
   // Send bookings that were saved while offline
   useEffect(() => {
     if (!user || user.role === 'admin') return;
-    const run = async () => { const n = await flushPending(); if (n) { notice(`${n} offline booking(s) synced`); setPage(user.role === 'guest' ? 'mybookings' : 'bookings'); } };
+    const run = async () => { try { const n = await API.flushPending(); if (n) { notice(`${n} offline booking(s) synced`); setPage(user.role === 'guest' ? 'mybookings' : 'bookings'); } } catch (error) { notice(error.message); } };
     run();
     window.addEventListener('online', run);
     const onMsg = (e) => e.data?.type === 'flush-bookings' && run();
@@ -51,9 +57,9 @@ export default function App() {
     return () => { window.removeEventListener('online', run); navigator.serviceWorker?.removeEventListener('message', onMsg); };
   }, [user, notice]);
 
-  if (!user) return <Login onLogin={(u, t) => { setToken(t); setUser(u); setPage(u.role === 'admin' && u.permissions?.includes('dashboard.view') ? 'dashboard' : 'rooms'); }} />;
+  if (!user) return <Login onLogin={(u, t) => { API.setToken(t); setUser(u); setPage(u.role === 'admin' && u.permissions?.includes('dashboard.view') ? 'dashboard' : u.role === 'guest' ? 'home' : 'rooms'); }} />;
 
-  const logout = () => { setToken(null); setUser(null); };
+  const logout = () => { API.setToken(null); setUser(null); };
   const employee=user.role!=='guest';
   const can=p=>user.permissions?.includes(p);
   const items = employee ? [...(NAV[user.role]||[]).filter(([key])=>key==='rooms'?can('rooms.view'):key==='bookings'||key==='today'?can('bookings.manage'):key==='users'?can('staff.manage'):key==='reports'?can('reports.view'):key==='chat'?user.permission_role==='receptionist':false),...EXTRA_NAV.filter(([, ,permission])=>can(permission))] : NAV.guest;
@@ -64,9 +70,25 @@ export default function App() {
   const isGuest = user.role === 'guest';
 
   const bell = async () => {
-    try { await enablePush(); notice('Notifications enabled'); } catch (e) { notice(e.message); }
+    try { await PUSH.enablePush(); notice('Notifications enabled'); } catch (e) { notice(e.message); }
   };
   const bellLabel = employee?'Notifications':'Enable notifications';
+
+  if (isGuest) {
+    const guestPages = { home: GuestHome, about: AboutResort, rooms: Rooms, services: GuestServices, booking: BookRoom, mybookings: Bookings, notifications: GuestNotifications, chat: Chat };
+    const GuestPage = guestPages[page] || GuestHome;
+    return (
+      <div className="shell shell-top">
+        <header className="top"><div className="top-in">
+          <div className="shell-brand"><img src="/icon.svg" alt="" width="40" height="40" /><span>Resort</span></div>
+          <nav className="top-nav" aria-label="Main">{items.map(([key, label]) => <button key={key} className={`top-link${page === key ? ' on' : ''}`} aria-current={page === key ? 'page' : undefined} onClick={() => goTo(key)}>{label}</button>)}</nav>
+          <div className="top-me"><strong>{user.name}</strong><button className="shell-logout" onClick={logout}>Log out</button></div>
+        </div></header>
+        <main className="shell-body"><div className="shell-tools">{headerAction}<button className="shell-bell" onClick={bell} aria-label="Enable notifications">Notifications</button></div><GuestPage {...props} /></main>
+        {toast && <div className="shell-toast" role="status">{toast}</div>}
+      </div>
+    );
+  }
 
   const layout = (
     <div className={employee?'layout employee-shell':'layout'}>

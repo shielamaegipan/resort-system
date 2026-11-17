@@ -1,138 +1,83 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
-import './Dashboard.css';
 
-const peso = (n) => '₱' + Number(n || 0).toLocaleString('en-PH', { maximumFractionDigits: 0 });
-const STATUS_LABEL = {
-  pending: 'Pending', confirmed: 'Confirmed', checked_in: 'Checked in',
-  checked_out: 'Checked out', cancelled: 'Cancelled',
+const peso = (n) => '₱' + Number(n || 0).toLocaleString('en-PH');
+
+const S = {
+  page: { display: 'grid', gap: 20 },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 },
+  card: { background: '#fff', borderRadius: 16, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,.08)' },
+  label: { fontSize: 13, color: '#5b6b6e', margin: 0 },
+  value: { fontSize: 28, fontWeight: 600, margin: '6px 0 0', color: '#093e44' },
+  panel: { background: '#fff', borderRadius: 16, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,.08)', overflowX: 'auto' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: 15 },
+  th: { textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid #e3e8e8', color: '#5b6b6e', fontWeight: 500 },
+  td: { padding: '10px', borderBottom: '1px solid #f0f3f3' },
+  error: { background: '#fbe9e7', color: '#b3261e', padding: '12px 16px', borderRadius: 12 },
 };
-const STATUS_ORDER = ['pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled'];
 
-function monthLabel(ym) {
-  const [y, m] = ym.split('-').map(Number);
-  return new Date(y, m - 1, 1).toLocaleString('en', { month: 'short' });
+function Stat({ label, value }) {
+  return (
+    <div style={S.card}>
+      <p style={S.label}>{label}</p>
+      <p style={S.value}>{value}</p>
+    </div>
+  );
 }
 
-// Last 6 months, filling months that have no bookings with 0
-function lastSixMonths(monthly) {
-  const byMonth = Object.fromEntries((monthly || []).map((m) => [m.month, Number(m.revenue)]));
-  const out = [];
-  const now = new Date();
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    out.push({ month: key, revenue: byMonth[key] || 0 });
-  }
-  return out;
-}
-
-export default function Dashboard({ notice, goTo }) {
+export default function Dashboard() {
   const [d, setD] = useState(null);
-  const [rep, setRep] = useState(null);
   const [error, setError] = useState('');
 
-  const load = () => {
-    setError('');
-    Promise.all([api('/dashboard'), api('/reports/summary')])
-      .then(([dash, report]) => { setD(dash); setRep(report); })
-      .catch((e) => { setError(e.message || 'Could not load the dashboard'); notice?.(e.message); });
-  };
-  useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    api('/dashboard').then(setD).catch((e) => setError(e.message));
+  }, []);
 
-  if (error) return <div className="dash-state">{error} <button onClick={load}>Try again</button></div>;
-  if (!d || !rep) return <div className="dash-state">Loading dashboard…</div>;
-
-  const totalRooms = d.rooms.total || 0;
-  const occPct = totalRooms ? Math.round((d.occupied_today / totalRooms) * 100) : 0;
-  const months = lastSixMonths(rep.monthly);
-  const maxRev = Math.max(...months.map((m) => m.revenue), 1);
-  const statusCount = Object.fromEntries((rep.byStatus || []).map((s) => [s.status, s.n]));
-  const maxStatus = Math.max(...STATUS_ORDER.map((s) => statusCount[s] || 0), 1);
+  if (error) return <div style={S.error}>{error}</div>;
+  if (!d) return <p>Loading...</p>;
 
   return (
-    <div className="dash">
-      {/* Headline: occupancy is what an owner checks first */}
-      <section className="dash-hero">
-        <div className="dash-occ">
-          <p className="dash-label">Rooms in use today</p>
-          <p className="dash-big">{d.occupied_today}<span> of {totalRooms}</span></p>
-          <div className="dash-bar" role="img" aria-label={`${occPct}% occupied`}>
-            <i style={{ width: `${occPct}%` }} />
-          </div>
-          <p className="dash-sub">
-            {occPct}% occupied · {d.rooms.available} available · {d.rooms.maintenance} under maintenance
-          </p>
-        </div>
-        <dl className="dash-facts">
-          <div><dt>Revenue this month</dt><dd>{peso(d.month_revenue)}</dd><small>{d.month_bookings} bookings</small></div>
-          <div><dt>Arrivals today</dt><dd>{d.arrivals_today}</dd></div>
-          <div><dt>Departures today</dt><dd>{d.departures_today}</dd></div>
-          <div><dt>Staff / Guests</dt><dd>{d.users.staff} / {d.users.guests}</dd></div>
-        </dl>
-      </section>
-
-      {d.pending_bookings > 0 && (
-        <div className="dash-alert">
-          <span><strong>{d.pending_bookings}</strong> booking{d.pending_bookings > 1 ? 's are' : ' is'} waiting for staff confirmation.</span>
-          {goTo && <button onClick={() => goTo('bookings')}>View bookings</button>}
-        </div>
-      )}
-
-      <div className="dash-grid">
-        <section className="dash-panel">
-          <h2>Revenue, last 6 months</h2>
-          <div className="dash-chart">
-            {months.map((m) => (
-              <div key={m.month} className="dash-col" title={`${monthLabel(m.month)}: ${peso(m.revenue)}`}>
-                <span className="dash-val">{m.revenue ? peso(m.revenue) : ''}</span>
-                <i style={{ height: `${Math.max((m.revenue / maxRev) * 100, m.revenue ? 4 : 0)}%` }} />
-                <span className="dash-mon">{monthLabel(m.month)}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="dash-panel">
-          <h2>Bookings by status</h2>
-          <ul className="dash-status">
-            {STATUS_ORDER.map((s) => (
-              <li key={s}>
-                <span>{STATUS_LABEL[s]}</span>
-                <div><i className={`st-${s}`} style={{ width: `${((statusCount[s] || 0) / maxStatus) * 100}%` }} /></div>
-                <b>{statusCount[s] || 0}</b>
-              </li>
-            ))}
-          </ul>
-        </section>
+    <div style={S.page}>
+      <div style={S.grid}>
+        <Stat label="Revenue this month" value={peso(d.month_revenue)} />
+        <Stat label="Bookings this month" value={d.month_bookings} />
+        <Stat label="Pending bookings" value={d.pending_bookings} />
+        <Stat label="Arrivals today" value={d.arrivals_today} />
+        <Stat label="Departures today" value={d.departures_today} />
+        <Stat label="Occupied rooms" value={`${d.occupied_today} / ${d.rooms.total}`} />
+        <Stat label="Rooms available" value={d.rooms.available} />
+        <Stat label="Rooms in maintenance" value={d.rooms.maintenance} />
+        <Stat label="Staff accounts" value={d.users.staff} />
+        <Stat label="Guests" value={d.users.guests} />
       </div>
 
-      <section className="dash-panel">
-        <div className="dash-panel-head">
-          <h2>Latest bookings</h2>
-          {goTo && <button className="dash-link" onClick={() => goTo('bookings')}>See all</button>}
-        </div>
-        {d.recent_bookings.length === 0 ? (
-          <p className="dash-empty">No bookings yet. They will show up here as guests book rooms.</p>
-        ) : (
-          <div className="dash-scroll">
-            <table className="dash-table">
-              <thead><tr><th>Guest</th><th>Room</th><th>Stay</th><th>Total</th><th>Status</th></tr></thead>
-              <tbody>
-                {d.recent_bookings.map((b) => (
-                  <tr key={b.id}>
-                    <td>{b.guest_name}</td>
-                    <td>{b.room_name}</td>
-                    <td>{b.check_in} → {b.check_out}</td>
-                    <td>{peso(b.total_price)}</td>
-                    <td><span className={`dash-pill st-${b.status}`}>{STATUS_LABEL[b.status] || b.status}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      <div style={S.panel}>
+        <h2 style={{ marginTop: 0 }}>Recent bookings</h2>
+        <table style={S.table}>
+          <thead>
+            <tr>
+              {['Guest', 'Room', 'Check-in', 'Check-out', 'Total', 'Status'].map((h) => (
+                <th key={h} style={S.th}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {d.recent_bookings.length === 0 && (
+              <tr><td style={S.td} colSpan={6}>No bookings yet.</td></tr>
+            )}
+            {d.recent_bookings.map((b) => (
+              <tr key={b.id}>
+                <td style={S.td}>{b.guest_name}</td>
+                <td style={S.td}>{b.room_name}</td>
+                <td style={S.td}>{b.check_in}</td>
+                <td style={S.td}>{b.check_out}</td>
+                <td style={S.td}>{peso(b.total_price)}</td>
+                <td style={S.td}>{String(b.status).replace('_', ' ')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

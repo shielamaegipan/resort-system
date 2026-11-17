@@ -20,6 +20,24 @@ const server = http.createServer(app);
 const origins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173,http://127.0.0.1:5173').split(',').map(s=>s.trim());
 const origin = (value, callback) => callback(null, !value || origins.includes(value));
 
+if (!process.env.JWT_SECRET) console.warn('WARNING: JWT_SECRET is missing in backend/.env');
+process.on('unhandledRejection', (e) => console.error('Unhandled rejection:', e));
+
+// ---------- Make async route handlers safe ----------
+// Express 4 does not catch errors thrown inside async handlers, which can crash the
+// server or leave the request hanging. This sends them to the error handler instead.
+for (const method of ['get', 'post', 'put', 'patch', 'delete']) {
+  const original = app[method].bind(app);
+  app[method] = (route, ...handlers) => {
+    if (handlers.length === 0) return original(route); // app.get('setting') used internally by Express
+    return original(route, ...handlers.map((h) => (
+      typeof h === 'function' && h.length < 4
+        ? (req, res, next) => Promise.resolve(h(req, res, next)).catch(next)
+        : h
+    )));
+  };
+}
+
 app.use(cors({ origin }));
 app.use(express.json({ limit: '25mb' })); // raised so large base64 images fit
 app.use((req,res,next)=>{res.set('X-Content-Type-Options','nosniff'); if(req.path.startsWith('/api'))res.set('Cache-Control','no-store');next();});
@@ -73,15 +91,32 @@ app.use('/api/push', pushRouter);
 function allow(...roles) {
   return async (req, res, next) => {
     try {
-      const [[u]] = await db.query('SELECT role FROM users WHERE id = ? AND deleted_at IS NULL', [req.user.id]);
-      if (!u) return res.status(401).json({ error: 'User not found' });
-      req.user.role = u.role;
+      const tokenUser = req.user || {};
+      const uid = tokenUser.id ?? tokenUser.userId ?? tokenUser.sub;
+      let u = null;
+
+      if (uid != null) {
+        [[u]] = await db.query('SELECT id, role FROM users WHERE id = ? AND deleted_at IS NULL', [uid]);
+      }
+      // The token may carry an old id (for example after the database was re-imported).
+      // The token is signed, so its email can be trusted: find the account by email instead.
+      if (!u && tokenUser.email) {
+        [[u]] = await db.query('SELECT id, role FROM users WHERE email = ? AND deleted_at IS NULL', [tokenUser.email]);
+      }
+
+      if (!u) {
+        console.warn('[allow] 401 account not found:', req.method, req.originalUrl, 'token =', JSON.stringify(tokenUser));
+        return res.status(401).json({ error: 'Account not found. Please log in again.' });
+      }
+
+      req.user = { ...tokenUser, id: u.id, role: u.role };
       if (roles.length && !roles.includes(u.role)) {
+        console.warn('[allow] 403 role not allowed:', req.method, req.originalUrl, 'role =', u.role, 'needs =', roles.join('/'));
         return res.status(403).json({ error: 'You are not allowed to do this' });
       }
       next();
     } catch (e) {
-      console.error(e);
+      console.error('[allow] error:', e);
       res.status(500).json({ error: 'Server error' });
     }
   };
@@ -678,7 +713,6 @@ async function ensureStaffTables() {
     console.log('Seeded sample services');
   }
 }
-ensureStaffTables().catch((e) => console.warn('Staff tables setup failed:', e.message));
 
 const PORT = process.env.PORT || 4000;
 async function start() {
@@ -686,6 +720,7 @@ async function start() {
   await require('./migrate-admin')();
   await require('./migrate-platform')();
   await require('./migrate-advanced')();
+  await ensureStaffTables();
   if(process.env.SEED_DEMO==='true'&&process.env.NODE_ENV!=='production'){await seedUsers();await seedRooms();}
   require('./lib/reminders').start();
   server.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));
