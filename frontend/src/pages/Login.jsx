@@ -10,6 +10,7 @@ export default function Login({ onLogin }) {
 
   const submit = async (e) => {
     e.preventDefault();
+    if(busy)return;
     setErr(''); setBusy(true);
     try {
       const d = await api(`/auth/${mode}`, { method: 'POST', body: f });
@@ -25,7 +26,7 @@ export default function Login({ onLogin }) {
         <h2>{mode === 'login' ? 'Welcome back' : 'Create a guest account'}</h2>
         {mode === 'register' && <label>Name<input value={f.name} onChange={set('name')} required /></label>}
         <label>Email<input type="email" value={f.email} onChange={set('email')} required /></label>
-        <label>Password<input type="password" value={f.password} onChange={set('password')} required /></label>
+        <label>Password<input type="password" autoComplete={mode==='login'?'current-password':'new-password'} minLength={mode==='register'?12:undefined} maxLength={72} value={f.password} onChange={set('password')} required /></label>
         {err && <p className="error">{err}</p>}
         <button className="primary" disabled={busy}>{mode === 'login' ? 'Log in' : 'Register'}</button>
         <p className="switch">

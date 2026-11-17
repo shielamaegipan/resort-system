@@ -1,6 +1,12 @@
 # 🏝️ Resort Management System
 
+Current advanced admin implementation and local commands: [Advanced admin — original UI](docs/advanced-admin.md). The original application shell, CSS and pages are retained, with authorized feature pages appended in the same style. This guide supersedes earlier alternate-workspace UI instructions below.
+
+Integrated platform setup, permissions, payments, calendar, migrations and verification: [Platform upgrade guide](docs/platform-upgrade.md). This guide supersedes the legacy automatic-demo-account and staff-access notes below. Existing databases must not be reset or reimported.
+
 A web-based **Resort Reservation and Management System** built with Node.js, React and MySQL. It makes it easy to manage rooms, guest bookings, and staff–guest communication, even offline.
+
+The existing Admin workspace has been upgraded with responsive layouts, live updates, safe booking transactions, reports, staff management, and persistent notifications. See [Admin upgrade: setup, API contracts, verification, and limitations](docs/admin-upgrade.md).
 
 ## System Users
 
