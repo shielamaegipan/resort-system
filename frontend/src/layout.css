@@ -1,4 +1,4 @@
-/* Layout: menu on top for guests, menu on the left for admin and staff */
+  /* Layout: menu on top for guests, menu on the left for admin and staff */
 .shell { min-height:100vh; background:#f3eee4; color:#0e2a2d; font-family:'Figtree',system-ui,sans-serif; }
 .shell button { font-family:inherit; }
 .shell-brand { display:flex; align-items:center; gap:12px; }
