@@ -17,8 +17,12 @@ function auth(req, res, next) {
   try {
     req.user = verifyToken(token);
     next();
-  } catch {
-    res.status(401).json({ error: 'Session expired. Please log in again.' });
+  } catch (err) {
+    console.warn('[auth] 401:', req.method, req.originalUrl, '-', err.name, '-', err.message);
+    const error = err.name === 'TokenExpiredError'
+      ? 'Session expired. Please log in again.'
+      : 'Invalid session. Please log in again.';
+    res.status(401).json({ error });
   }
 }
 

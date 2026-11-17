@@ -1,0 +1,52 @@
+.hg { --hg-teal:#093e44; --hg-amber:#f5a623; display:flex; flex-direction:column; gap:18px; margin-bottom:28px; }
+
+/* Slideshow */
+.hg-hero { position:relative; height:clamp(260px, 38vw, 440px); border-radius:18px; overflow:hidden; background:#0d5a61; }
+.hg-slide { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:0; transition:opacity .9s ease; }
+.hg-slide.on { opacity:1; }
+.hg-shade { position:absolute; inset:0; background:linear-gradient(90deg, rgba(5,40,45,.68) 0%, rgba(5,40,45,.28) 45%, rgba(5,40,45,0) 75%); }
+.hg-text { position:absolute; left:clamp(18px,4vw,48px); bottom:clamp(20px,4vw,44px); max-width:min(760px, 92%); color:#fff; }
+.hg-text h2 { font-family:'Fraunces',Georgia,serif; font-size:clamp(1.6rem,3.6vw,2.7rem); line-height:1.1; margin:0 0 8px; }
+.hg-text p { margin:0 0 16px; font-size:clamp(.95rem,1.5vw,1.1rem); opacity:.95; }
+.hg-cta { background:var(--hg-amber); color:#2a1a00; border:0; border-radius:99px; padding:11px 22px; font:inherit; font-weight:600; cursor:pointer; }
+.hg-cta:hover { filter:brightness(1.06); }
+.hg-actions { display:flex; flex-wrap:wrap; gap:10px; }
+.hg-ghost { background:rgba(255,255,255,.18); color:#fff; border:1.5px solid rgba(255,255,255,.75); border-radius:99px; padding:10px 20px; font:inherit; font-weight:600; cursor:pointer; backdrop-filter:blur(4px); }
+.hg-ghost:hover { background:rgba(255,255,255,.32); }
+
+.hg-arrow { position:absolute; top:50%; transform:translateY(-50%); width:42px; height:42px; border-radius:50%; border:0; background:rgba(255,255,255,.85); color:var(--hg-teal); font-size:1.7rem; line-height:1; cursor:pointer; display:grid; place-items:center; padding:0 0 3px; }
+.hg-arrow.prev { left:12px; } .hg-arrow.next { right:12px; }
+.hg-arrow:hover { background:#fff; }
+.hg-dots { position:absolute; right:18px; bottom:16px; display:flex; gap:8px; }
+.hg-dots button { width:10px; height:10px; border-radius:50%; border:0; padding:0; background:rgba(255,255,255,.55); cursor:pointer; }
+.hg-dots button.on { background:#fff; width:26px; border-radius:99px; }
+.hg button:focus-visible { outline:3px solid var(--hg-amber); outline-offset:2px; }
+
+/* Photo grid */
+.hg-heading { font-family:'Fraunces',Georgia,serif; font-size:1.5rem; margin:10px 0 0; color:var(--hg-teal); }
+.hg-grid { display:grid; grid-template-columns:repeat(4,1fr); grid-auto-rows:190px; grid-auto-flow:dense; gap:12px; }
+.hg-tile { position:relative; padding:0; border:0; border-radius:14px; overflow:hidden; cursor:pointer; background:#cfe9e6; }
+.hg-tile:nth-child(6n+1) { grid-column:span 2; grid-row:span 2; }
+.hg-tile:nth-child(6n+4) { grid-column:span 2; }
+.hg-tile img { width:100%; height:100%; object-fit:cover; display:block; transition:transform .5s ease; }
+.hg-tile:hover img { transform:scale(1.06); }
+.hg-tile span { position:absolute; left:0; right:0; bottom:0; padding:22px 14px 10px; text-align:left; color:#fff; font-weight:600; font-size:.92rem; background:linear-gradient(transparent, rgba(5,40,45,.7)); opacity:0; transition:opacity .25s; }
+.hg-tile:hover span, .hg-tile:focus-visible span { opacity:1; }
+
+/* Lightbox */
+.hg-lightbox { position:fixed; inset:0; z-index:1000; background:rgba(4,22,25,.92); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:24px; }
+.hg-lightbox img { max-width:min(1100px,92vw); max-height:78vh; border-radius:12px; object-fit:contain; }
+.hg-lightbox p { color:#fff; margin:0; }
+.hg-close { position:absolute; top:16px; right:18px; width:42px; height:42px; border-radius:50%; border:0; background:rgba(255,255,255,.88); color:var(--hg-teal); font-size:1.7rem; line-height:1; cursor:pointer; }
+
+@media (max-width: 860px) {
+  .hg-grid { grid-template-columns:repeat(2,1fr); grid-auto-rows:150px; }
+  .hg-tile:nth-child(6n+1) { grid-column:span 2; grid-row:span 2; }
+  .hg-tile:nth-child(6n+4) { grid-column:span 2; grid-row:span 1; }
+  .hg-tile span { opacity:1; }
+  .hg-arrow { width:36px; height:36px; }
+}
+@media (prefers-reduced-motion: reduce) { .hg-slide, .hg-tile img { transition:none; } }
+
+.hg-more { align-self:center; background:#fff; color:var(--hg-teal); border:1.5px solid var(--hg-teal); border-radius:99px; padding:10px 22px; font:inherit; font-weight:600; cursor:pointer; }
+.hg-more:hover { background:var(--hg-teal); color:#fff; }
