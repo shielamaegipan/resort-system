@@ -1,4 +1,3 @@
-import PushControls from '../features/PushControls.jsx';
 import { useNotifications } from '../features/notification-client.jsx';
 import './staff.css';
 import './guest.css';
@@ -11,7 +10,6 @@ export default function GuestNotifications({ notice, goTo }) {
   };
   return <>
     <h1>Notifications</h1>
-    <PushControls/>
     <div className="toolbar actions">
       <button disabled={!unread} onClick={() => read()}>Mark all as read</button>
       <span className="muted" role="status">{unread} unread</span>

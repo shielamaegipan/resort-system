@@ -42,7 +42,6 @@ export default function StaffAccounts() {
 
   return (
     <div style={s.page}>
-      <h1 style={s.title}>Staff Accounts</h1>
       {error && <div style={s.error}>{error}</div>}
 
       <form onSubmit={create} style={{ ...s.panel, display: 'flex', flexWrap: 'wrap', gap: 10 }}>

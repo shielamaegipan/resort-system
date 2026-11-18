@@ -18,6 +18,8 @@ const { router: pushRouter } = require('./routes/push');
 const app = express();
 const server = http.createServer(app);
 const origins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173,http://127.0.0.1:5173').split(',').map(s=>s.trim());
+if (process.env.RAILWAY_PUBLIC_DOMAIN) origins.push(`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`);
+if (process.env.RENDER_EXTERNAL_URL) origins.push(new URL(process.env.RENDER_EXTERNAL_URL).origin);
 const origin = (value, callback) => callback(null, !value || origins.includes(value));
 
 if (!process.env.JWT_SECRET) console.warn('WARNING: JWT_SECRET is missing in backend/.env');
@@ -61,7 +63,7 @@ app.use('/api', (req,res,next)=>{
 });
 
 // Room images
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
+const UPLOAD_DIR = require('./lib/uploads').publicDir;
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 app.use('/uploads', express.static(UPLOAD_DIR));
 
@@ -435,8 +437,8 @@ app.post('/api/bookings/:id/check-in', auth, allow('staff', 'admin'), wrap(async
   if (!b.not_expired) return res.status(400).json({ error: 'This booking has already passed its check-out date' });
   const [[room]] = await db.query('SELECT status FROM rooms WHERE id = ? AND deleted_at IS NULL', [b.room_id]);
   if (!room) return res.status(400).json({ error: 'Room no longer exists' });
-  if (room.status === 'maintenance') return res.status(400).json({ error: 'The room is under maintenance' });
-  await db.query("UPDATE bookings SET status = 'checked_in' WHERE id = ?", [b.id]);
+  if (['maintenance', 'out_of_service'].includes(room.status)) return res.status(400).json({ error: 'The room is under maintenance' });
+  await bookings.change(req.params.id, req.user, 'status', 'checked_in');
   res.json(await getBill(b.id));
 }));
 
@@ -447,7 +449,7 @@ app.post('/api/bookings/:id/check-out', auth, allow('staff', 'admin'), wrap(asyn
   if (bill.balance > 0 && !req.body.allow_unpaid) {
     return res.status(409).json({ error: `Unpaid balance: ${bill.balance}. Collect cash payment first.`, balance: bill.balance, needs_payment: true });
   }
-  await db.query("UPDATE bookings SET status = 'checked_out' WHERE id = ?", [req.params.id]);
+  await bookings.change(req.params.id, req.user, 'status', 'checked_out');
   res.json(await getBill(req.params.id));
 }));
 
@@ -623,6 +625,16 @@ io.on('connection', (socket) => {
 });
 
 // ---------- Error handler (e.g. image too large) ----------
+// Serve the production frontend from the API host, including direct page visits.
+const frontendDirectory = path.resolve(__dirname, '../frontend/dist');
+if (process.env.NODE_ENV === 'production' && fs.existsSync(path.join(frontendDirectory, 'index.html'))) {
+  app.use(express.static(frontendDirectory, { index: false }));
+  app.get('*', (req, res, next) => {
+    if (/^\/(api|uploads|socket\.io)(\/|$)/.test(req.path) || path.extname(req.path)) return next();
+    res.set('Cache-Control', 'no-cache').sendFile(path.join(frontendDirectory, 'index.html'));
+  });
+}
+
 app.use((err, req, res, next) => {
   if (err && err.type === 'entity.too.large') {
     return res.status(413).json({ error: 'The picture is too large. Please choose a smaller one.' });

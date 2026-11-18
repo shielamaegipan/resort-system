@@ -11,7 +11,7 @@ export function ClassicReports({ user, go }) {
   return <div className="stack"><QueryState query={query}>{d => <>
     <div className="stats">{[
       ['Revenue (verified payments)', money(d.revenue)], ['Bookings', d.bookings],
-      ['Occupied today', `${d.rooms.occupied} / ${d.rooms.total} (${d.rooms.total ? Math.round(d.rooms.occupied / d.rooms.total * 100) : 0}%)`],
+      ['Occupied today', `${d.rooms.occupied} / ${d.rooms.total} · ${d.rooms.total ? Math.round(d.rooms.occupied / d.rooms.total * 100) : 0}%`],
       ['Rooms available', d.rooms.available], ['Staff accounts', reports.data?.users.staff ?? '...'], ['Guest accounts', d.guests],
     ].map(([label, value]) => <div className="card stat" key={label}><span className="muted">{label}</span><strong>{value}</strong></div>)}</div>
     <div className="two-col"><div className="card pad"><h3>Bookings by status</h3>{d.byStatus.map(s => <div className="line" key={s.status}><span className={`pill s-${s.status}`}>{s.status.replaceAll('_', ' ')}</span><strong>{s.n}</strong></div>)}</div>

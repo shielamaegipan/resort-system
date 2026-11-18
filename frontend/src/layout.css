@@ -1,4 +1,4 @@
-  /* Layout: menu on top for guests, menu on the left for admin and staff */
+/* Layout: menu on top for guests, menu on the left for admin and staff */
 .shell { min-height:100vh; background:#f3eee4; color:#0e2a2d; font-family:'Figtree',system-ui,sans-serif; }
 .shell button { font-family:inherit; }
 .shell-brand { display:flex; align-items:center; gap:12px; }
@@ -43,6 +43,9 @@
 .side-top-actions { display:flex; align-items:center; gap:10px; }
 .side-logout { all:unset; box-sizing:border-box; padding:10px 22px; border-radius:99px; border:1.5px solid #093e44; color:#093e44; font-weight:600; cursor:pointer; background:#fff; }
 .side-logout:hover { background:#093e44; color:#fff; }
+/* Log out sits at the bottom of the sidebar */
+.side-nav { flex:none; margin-bottom:18px; }
+.side-logout-bottom { display:block; width:100%; margin-top:auto; text-align:center; position:sticky; bottom:0; }
 
 .shell-head { display:flex; align-items:center; gap:14px; margin-bottom:22px; }
 .shell-head h1 { font-family:'Fraunces',Georgia,serif; font-size:2.2rem; margin:0; flex:1; color:#0e2a2d; }
@@ -65,4 +68,106 @@
 
 @media (prefers-reduced-motion: reduce) { .side { transition:none; } }
 
-h1 + h1 { display: none; }
+/* The shell title is hidden when the page already shows the same title (see PageSlot in App.jsx) */
+.shell-body.hide-shell-title .shell-head h1 { display:none; }
+.shell-body.hide-shell-title .head-actions { margin-left:auto; }
+.shell-body.hide-shell-title .shell-head { margin-bottom:8px; }
+
+/* Guest pages: interactive feel.
+   Hover  -> the item lifts a little with a soft shadow.
+   Press  -> the item floats higher (lulutang) while the mouse or finger is held down.
+   Only the guest layout (.shell-top) is affected; admin and staff are unchanged. */
+
+.shell-top {
+  --lift-shadow: 0 10px 24px rgba(9, 62, 68, .14);
+  --float-shadow: 0 20px 40px rgba(9, 62, 68, .24);
+}
+
+/* ---------- Cards, room cards, stat tiles ---------- */
+.shell-top .shell-body :is(.grid > *, .stats > *, .room, .stat, [class*="card"]):not(.modal):not(.confirm) {
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.shell-top .shell-body :is(.grid > *, .stats > *, .room, .stat, [class*="card"]):not(.modal):not(.confirm):hover {
+  transform: translateY(-6px);
+  box-shadow: var(--lift-shadow);
+  position: relative;
+  z-index: 1;
+}
+.shell-top .shell-body :is(.grid > *, .stats > *, .room, .stat, [class*="card"]):not(.modal):not(.confirm):active {
+  transform: translateY(-11px) scale(1.02);
+  box-shadow: var(--float-shadow);
+  z-index: 2;
+}
+
+/* ---------- Buttons and links ---------- */
+.shell-top :is(button, a, [role="button"], summary):not(:disabled) {
+  transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease, color .15s ease;
+}
+.shell-top .shell-body :is(button, [role="button"]):not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(9, 62, 68, .16);
+}
+.shell-top .shell-body :is(button, [role="button"]):not(:disabled):active {
+  transform: translateY(-4px) scale(1.04);
+  box-shadow: 0 12px 24px rgba(9, 62, 68, .26);
+}
+
+/* ---------- Top menu ---------- */
+.shell-top .top-link:hover { transform: translateY(-1px); }
+.shell-top .top-link:active { transform: translateY(-2px) scale(1.04); }
+.shell-top .shell-logout:hover { transform: translateY(-2px); box-shadow: 0 6px 14px rgba(9, 62, 68, .22); }
+.shell-top .shell-logout:active { transform: translateY(-4px) scale(1.04); box-shadow: 0 12px 24px rgba(9, 62, 68, .3); }
+.shell-top .shell-bell:hover { transform: translateY(-2px); box-shadow: 0 6px 14px rgba(9, 62, 68, .16); }
+.shell-top .shell-bell:active { transform: translateY(-4px) scale(1.06); }
+
+/* ---------- Table rows ---------- */
+.shell-top .shell-body tbody tr { transition: background-color .15s ease; }
+.shell-top .shell-body tbody tr:hover { background: #faf8f3; }
+
+/* ---------- Form fields ---------- */
+.shell-top .shell-body :is(input, select, textarea) { transition: box-shadow .15s ease, border-color .15s ease; }
+.shell-top .shell-body :is(input, select, textarea):hover { border-color: #9db8ba; }
+.shell-top .shell-body :is(input, select, textarea):focus { border-color: #093e44; box-shadow: 0 0 0 3px rgba(245, 166, 35, .35); outline: none; }
+
+/* People who prefer less motion get colour changes only */
+@media (prefers-reduced-motion: reduce) {
+  .shell-top *, .shell-top *:hover, .shell-top *:active { transition: none !important; transform: none !important; }
+}
+
+
+/* Guest: a pressed picture floats up like the top menu (see FloatOnPress in App.jsx) */
+.shell-top .float-lift {
+  transform: translateY(-16px) scale(1.015) !important;
+  box-shadow: 0 26px 50px rgba(9, 62, 68, .34) !important;
+  z-index: 5;
+}
+
+
+/* Guest home: room cards, photo blocks, reviews and the stay box lift on hover and float higher when pressed */
+.shell-top .gh-room, .shell-top .gh-review, .shell-top .gh-stay, .shell-top .gh-split,
+.shell-top .gh-offer, .shell-top .gh-welcome, .shell-top .gh-datebar,
+.shell-top .shell-body article, .shell-top .shell-body figure {
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.shell-top .gh-room:hover, .shell-top .gh-review:hover, .shell-top .gh-stay:hover,
+.shell-top .shell-body article:hover, .shell-top .shell-body figure:hover {
+  transform: translateY(-7px);
+  box-shadow: 0 16px 34px rgba(9, 62, 68, .2);
+  position: relative;
+  z-index: 1;
+}
+.shell-top .gh-split:hover, .shell-top .gh-offer:hover, .shell-top .gh-welcome:hover, .shell-top .gh-datebar:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 30px rgba(9, 62, 68, .2);
+  position: relative;
+  z-index: 1;
+}
+.shell-top .gh-room:active, .shell-top .gh-review:active, .shell-top .gh-stay:active, .shell-top .gh-split:active,
+.shell-top .gh-offer:active, .shell-top .gh-welcome:active, .shell-top .gh-datebar:active,
+.shell-top .shell-body article:active, .shell-top .shell-body figure:active {
+  transform: translateY(-14px) scale(1.02);
+  box-shadow: 0 28px 54px rgba(9, 62, 68, .36);
+  z-index: 5;
+}
+.shell-top .gh-room img, .shell-top .gh-split img { transition: transform .35s ease; }
+.shell-top .gh-room:hover img, .shell-top .gh-split:hover img { transform: scale(1.04); }
