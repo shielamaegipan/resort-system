@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
-import { enablePush } from '../push.js';
 import './staff.css';
 import './guest.css';
 
@@ -25,12 +24,10 @@ export default function GuestNotifications({ notice }) {
       load();
     } catch (e) { notice(e.message); }
   };
-  const enable = async () => { try { await enablePush(); notice('Notifications enabled'); } catch (e) { notice(e.message); } };
 
   return (
     <>
       <div className="toolbar">
-        <button className="primary" onClick={enable}>Enable push notifications</button>
         <button onClick={() => markRead()} disabled={!data.unread}>Mark all as read</button>
         <span className="muted">Get alerts for chat messages and booking updates on this device.</span>
       </div>

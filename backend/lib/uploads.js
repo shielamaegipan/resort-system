@@ -2,8 +2,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const v = require('./validation');
-const publicDir = path.join(__dirname, '../uploads');
-const privateDir = path.join(__dirname, '../private-uploads');
+const publicDir = process.env.STORAGE_DIR ? path.resolve(process.env.STORAGE_DIR, 'uploads') : path.join(__dirname, '../uploads');
+const privateDir = process.env.STORAGE_DIR ? path.resolve(process.env.STORAGE_DIR, 'private-uploads') : path.join(__dirname, '../private-uploads');
 async function saveImage(input, privateFile = false) {
   const m = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(input || '');
   if (!m) v.fail(400, 'Use a JPEG, PNG or WebP image');
@@ -20,4 +20,4 @@ async function saveImage(input, privateFile = false) {
 async function removeImage(file, privateFile = false) {
   if (file) await fs.unlink(path.join(privateFile ? privateDir : publicDir, path.basename(file))).catch(() => {});
 }
-module.exports = { saveImage, removeImage, privateDir };
+module.exports = { saveImage, removeImage, publicDir, privateDir };
