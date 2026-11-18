@@ -18,7 +18,6 @@ export default function Reports() {
 
   return (
     <div style={s.page}>
-      <h1 style={s.title}>Reports</h1>
 
       <div style={s.grid}>
         <div style={s.card}><p style={s.label}>Total revenue</p><p style={s.value}>{peso(r.revenue)}</p></div>

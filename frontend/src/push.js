@@ -8,11 +8,14 @@ const toKey = (b64) => {
 
 export async function enablePush() {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error('Notifications are not supported on this browser');
-  const perm = await Notification.requestPermission();
+  const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
   if (perm !== 'granted') throw new Error('Notification permission was not allowed');
   const { publicKey } = await api('/push/key');
   const key = publicKey || import.meta.env.VITE_VAPID_PUBLIC_KEY;
   if (!key) throw new Error('VAPID public key is not set on the server');
+  // Register here so push works in dev and in production. Without a registered
+  // service worker, navigator.serviceWorker.ready never resolves.
+  await navigator.serviceWorker.register('/sw.js');
   const reg = await navigator.serviceWorker.ready;
   const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toKey(key) }));
   await api('/push/subscribe', { method: 'POST', body: sub.toJSON() });

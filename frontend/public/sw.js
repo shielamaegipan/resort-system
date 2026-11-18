@@ -22,12 +22,28 @@ self.addEventListener('fetch', (e) => {
 self.addEventListener('push', (e) => {
   let data = { title: 'Resort', body: '' };
   try { data = e.data.json(); } catch {}
-  e.waitUntil(self.registration.showNotification(data.title, { body: data.body, icon: '/icon.svg', badge: '/icon.svg' }));
+  e.waitUntil((async () => {
+    await self.registration.showNotification(data.title || 'Resort', {
+      body: data.body || '',
+      icon: '/icon.svg',
+      badge: '/icon.svg',
+      tag: data.tag || undefined,
+      renotify: Boolean(data.tag),
+      data: { url: data.url || '/', category: data.category || null, entityId: data.entityId || null }
+    });
+    // Tell any open page to refresh its notification count.
+    const pages = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    pages.forEach((c) => c.postMessage({ type: 'push-received', category: data.category || null }));
+  })());
 });
 
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
-  e.waitUntil(self.clients.matchAll({ type: 'window' }).then((list) => (list[0] ? list[0].focus() : self.clients.openWindow('/'))));
+  const target = (e.notification.data && e.notification.data.url) || '/';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    if (list[0]) return list[0].focus();
+    return self.clients.openWindow(target);
+  }));
 });
 
 // Background Sync: ask the open page to send the queued offline bookings

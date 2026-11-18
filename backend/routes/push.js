@@ -31,22 +31,52 @@ router.post('/subscribe', auth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Send a push to everyone except the sender. Optional `roles` limits who receives it.
-async function notify({ exceptUserId, roles, title, body }) {
-  if (!enabled) return;
+// Send a push to devices. Optional `roles` / `userIds` limit who receives it.
+// The payload carries enough for the service worker to show a useful, clickable alert.
+async function notify({ exceptUserId, roles, userIds, title, body, category, entityId, url, audience }) {
+  const result = { sent: 0, failed: 0, subscriptions: 0 };
+  if (!enabled) return result;
   let sql = `SELECT ps.* FROM push_subscriptions ps JOIN users u ON u.id = ps.user_id
              WHERE u.deleted_at IS NULL AND ps.user_id <> ?`;
   const params = [exceptUserId || 0];
   if (roles && roles.length) { sql += ` AND u.role IN (${roles.map(() => '?').join(',')})`; params.push(...roles); }
+  if (Array.isArray(userIds)) {
+    if (!userIds.length) return result;
+    sql += ` AND ps.user_id IN (${userIds.map(() => '?').join(',')})`; params.push(...userIds);
+  }
   const [subs] = await db.query(sql, params);
-  const payload = JSON.stringify({ title, body });
+  result.subscriptions = subs.length;
+  const payload = JSON.stringify({
+    title, body: String(body || '').slice(0, 300),
+    category: category || null, entityId: entityId || null, audience: audience || 'admin',
+    url: url || '/', tag: category && entityId ? `${category}-${entityId}` : undefined
+  });
   await Promise.all(subs.map(async (s) => {
     try {
-      await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload);
+      await webpush.sendNotification(
+        { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+        payload,
+        { TTL: 60 * 60 * 24, urgency: 'high' }
+      );
+      result.sent++;
     } catch (e) {
-      if (e.statusCode === 404 || e.statusCode === 410) await db.query('DELETE FROM push_subscriptions WHERE id = ?', [s.id]);
+      result.failed++;
+      if (e.statusCode === 404 || e.statusCode === 410) {
+        await db.query('DELETE FROM push_subscriptions WHERE id = ?', [s.id]); // device unsubscribed
+      } else {
+        // Do not hide delivery problems: 401/403 = bad VAPID key or subject, 413 = payload too large.
+        console.warn(`Push failed for user ${s.user_id} (${e.statusCode || e.code || 'error'}): ${e.body || e.message}`);
+      }
     }
   }));
+  return result;
 }
+
+// Sends a test alert to the logged-in user's own devices, to check the device setup.
+router.post('/test', auth, async (req, res) => {
+  if (!enabled) return res.status(503).json({ error: 'Push is disabled: check VAPID keys in backend/.env' });
+  const result = await notify({ userIds: [req.user.id], title: 'Test notification', body: 'Device notifications are working.', category: 'test', audience: req.user.role === 'guest' ? 'guest' : 'admin' });
+  res.json(result);
+});
 
 module.exports = { router, notify };

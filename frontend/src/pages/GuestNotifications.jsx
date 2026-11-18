@@ -1,37 +1,48 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { enablePush } from '../push.js';
 import './staff.css';
 import './guest.css';
 
-const TEXT = {
-  pending: (b) => `Your booking for ${b.room_name} was sent and is waiting for confirmation.`,
-  confirmed: (b) => `Your booking for ${b.room_name} (${b.check_in} → ${b.check_out}) is confirmed.`,
-  checked_in: (b) => `You are checked in to ${b.room_name}. Enjoy your stay!`,
-  checked_out: (b) => `You checked out of ${b.room_name}. Thank you for staying with us!`,
-  cancelled: (b) => `Your booking for ${b.room_name} (${b.check_in} → ${b.check_out}) was cancelled.`,
-};
-
 export default function GuestNotifications({ notice }) {
-  const [rows, setRows] = useState([]);
-  useEffect(() => { api('/bookings').then(setRows).catch((e) => notice(e.message)); }, [notice]);
-  const sorted = [...rows].sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+  const [data, setData] = useState({ items: [], unread: 0 });
+
+  const load = useCallback(() => {
+    api('/my-notifications').then(setData).catch((e) => notice(e.message));
+  }, [notice]);
+
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, 10000);
+    window.addEventListener('focus', load);
+    return () => { clearInterval(timer); window.removeEventListener('focus', load); };
+  }, [load]);
+
+  const markRead = async (id) => {
+    try {
+      await api('/my-notifications/read', { method: 'PATCH', body: id ? { id } : {} });
+      window.dispatchEvent(new CustomEvent('resort:guest-notifications-read'));
+      load();
+    } catch (e) { notice(e.message); }
+  };
   const enable = async () => { try { await enablePush(); notice('Notifications enabled'); } catch (e) { notice(e.message); } };
 
   return (
     <>
       <div className="toolbar">
         <button className="primary" onClick={enable}>Enable push notifications</button>
+        <button onClick={() => markRead()} disabled={!data.unread}>Mark all as read</button>
         <span className="muted">Get alerts for chat messages and booking updates on this device.</span>
       </div>
       <div className="card">
-        {sorted.map((b) => (
-          <div key={b.id} className="note-item">
-            <div>{(TEXT[b.status] || (() => 'Booking updated.'))(b)}</div>
-            <div className="t">{String(b.updated_at).replace('T', ' ').slice(0, 16)}</div>
+        {data.items.map((n) => (
+          <div key={n.id} className="note-item" style={{ opacity: n.read_at ? 0.65 : 1, cursor: n.read_at ? 'default' : 'pointer' }} onClick={() => !n.read_at && markRead(n.id)}>
+            <div><strong>{n.title}</strong>{!n.read_at && <span className="pill s-pending" style={{ marginLeft: 8 }}>New</span>}</div>
+            <div>{n.body}</div>
+            <div className="t">{String(n.created_at).replace('T', ' ').slice(0, 16)}</div>
           </div>
         ))}
-        {!sorted.length && <div className="note-item muted">No notifications yet.</div>}
+        {!data.items.length && <div className="note-item muted">No notifications yet.</div>}
       </div>
     </>
   );

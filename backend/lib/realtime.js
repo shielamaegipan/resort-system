@@ -26,7 +26,7 @@ function attach(io) {
 }
 async function publish(category, title, body, entityId, eventId) {
   const event = { id: eventId || randomUUID(), category, title, body: String(body).slice(0, 500), entityId: Number(entityId) || null };
-  const delivered=[];
+  const delivered=[];const stored=[];
   const [[settings]]=await db.query('SELECT notification_preferences FROM resort_settings WHERE id=1');
   const preferences=settings?.notification_preferences?JSON.parse(settings.notification_preferences):{};
   try {
@@ -35,7 +35,7 @@ async function publish(category, title, body, entityId, eventId) {
     for(const user of users){if(!(await permissions(user)).includes(permission))continue;
       if(preferences[category]===false){delivered.push(user.id);continue;}
       const [result]=await db.query('INSERT IGNORE INTO admin_notifications(event_id,user_id,category,title,body,entity_id) VALUES (?,?,?,?,?,?)',[event.id,user.id,category,title,event.body,event.entityId]);
-      if(result.affectedRows)delivered.push(user.id);
+      if(result.affectedRows){delivered.push(user.id);stored.push(user.id);}
     }
   } catch (error) { console.error('Notification persistence failed:', error.message); }
   if (namespace) {
@@ -44,10 +44,19 @@ async function publish(category, title, body, entityId, eventId) {
     const permission={rooms:'rooms.view',bookings:'bookings.view',users:'staff.manage',payments:'payments.view',guests:'guests.view',settings:'settings.view'}[category];
     for (const user of users) if(delivered.includes(user.id)&&(await permissions(user)).includes(permission)) namespace.to(`user:${user.id}`).emit('admin:change', event);
   }
+  return stored;
+}
+// Save an in-app notification for ONE specific user (used for guests).
+async function notifyUser(userId, category, title, body, entityId) {
+  if (!userId) return;
+  try {
+    await db.query('INSERT INTO admin_notifications(event_id,user_id,category,title,body,entity_id) VALUES (?,?,?,?,?,?)',
+      [randomUUID(), userId, category, title, String(body).slice(0, 500), Number(entityId) || null]);
+  } catch (error) { console.error('Guest notification failed:', error.message); }
 }
 function readChanged(userId) { namespace?.to(`user:${userId}`).emit('admin:read'); }
 function revokeUser(userId) {
   namespace?.in(`user:${userId}`).disconnectSockets(true);
   for (const socket of root?.of('/').sockets.values() || []) if (socket.user?.id === Number(userId)) socket.disconnect(true);
 }
-module.exports = { attach, publish, readChanged, revokeUser };
+module.exports = { attach, publish, notifyUser, readChanged, revokeUser };

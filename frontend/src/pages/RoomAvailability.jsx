@@ -24,7 +24,7 @@ export default function RoomAvailability({ notice }) {
               <tr key={r.id}>
                 <td><strong>{r.name}</strong></td><td>{r.type}</td><td>{r.capacity}</td>
                 <td><span className={`pill st-${r.state}`}>{STATE[r.state]}</span></td>
-                <td>{r.booking ? `${r.booking.guest_name} (${r.booking.guests})` : '—'}</td>
+                <td>{r.booking ? `${r.booking.guest_name} · ${r.booking.guests} ${Number(r.booking.guests) === 1 ? 'guest' : 'guests'}` : '—'}</td>
                 <td>{r.booking ? `${r.booking.check_in} → ${r.booking.check_out}` : '—'}</td>
               </tr>
             ))}

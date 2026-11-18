@@ -22,7 +22,7 @@ export default function Reports({ notice }) {
       <div className="stats">
         {stat('Revenue (confirmed and up)', peso(d.revenue))}
         {stat('Bookings', d.bookings)}
-        {stat('Occupied today', `${d.occupied_today} / ${total} (${rate}%)`)}
+        {stat('Occupied today', `${d.occupied_today} / ${total} · ${rate}%`)}
         {stat('Rooms available', d.rooms.available ?? 0)}
         {stat('Staff accounts', d.users.staff ?? 0)}
         {stat('Guest accounts', d.users.guests ?? 0)}

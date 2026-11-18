@@ -25,6 +25,44 @@ async function migrate() {
     `CREATE TABLE IF NOT EXISTS resort_settings (id INT PRIMARY KEY, name VARCHAR(150) NOT NULL DEFAULT 'Resort', contact VARCHAR(500) NOT NULL DEFAULT '') ENGINE=InnoDB`
   ];
   for (const sql of definitions) await db.query(sql);
+
+  // Upgrade an old payments table (created by an earlier version) that is missing newer columns
+  await add('payments', 'transaction_reference', 'VARCHAR(150) NULL');
+  await add('payments', 'notes', 'TEXT NULL');
+  await add('payments', 'evidence_file', 'VARCHAR(255) NULL');
+  await add('payments', 'verified_by', 'INT NULL');
+  await add('payments', 'verified_at', 'DATETIME NULL');
+  await add('payments', 'refunded_amount', 'DECIMAL(10,2) NOT NULL DEFAULT 0');
+  await add('payments', 'idempotency_key', 'VARCHAR(100) NULL');
+  await add('payments', 'request_hash', 'CHAR(64) NULL');
+  // The legacy cash-only table (schema.sql / migrate_add_staff_features.sql) has no `status` or `recorded_by`
+  // column and only allows method='cash'. CREATE TABLE IF NOT EXISTS skips it, so upgrade it in place.
+  // Existing rows are kept: they were cash that staff already received, so they become 'verified'.
+  const has = async (name) => (await db.query('SHOW COLUMNS FROM payments LIKE ?', [name]))[0].length > 0;
+  const statusValues = "'pending','submitted','verified','rejected','refunded','partially_refunded'";
+  if (!(await has('status'))) {
+    await db.query(`ALTER TABLE payments ADD COLUMN status ENUM(${statusValues}) NOT NULL DEFAULT 'verified'`);
+    await db.query('ALTER TABLE payments ALTER COLUMN status DROP DEFAULT');
+    // verified_at is stored in UTC; created_at is in the server's session time zone.
+    await db.query("UPDATE payments SET verified_at=DATE_ADD(created_at,INTERVAL TIMESTAMPDIFF(SECOND,NOW(),UTC_TIMESTAMP()) SECOND) WHERE verified_at IS NULL");
+  }
+  if (!(await has('recorded_by'))) await db.query('ALTER TABLE payments ADD COLUMN recorded_by INT NULL');
+  if (await has('received_by')) {
+    await db.query('UPDATE payments SET recorded_by=received_by WHERE recorded_by IS NULL');
+    await db.query('UPDATE payments SET verified_by=received_by WHERE verified_by IS NULL AND verified_at IS NOT NULL');
+    // The new code does not fill received_by; without this, inserting a payment fails on the NOT NULL column.
+    await db.query('ALTER TABLE payments MODIFY received_by INT NULL');
+  }
+  if (await has('note')) await db.query('UPDATE payments SET notes=note WHERE notes IS NULL AND note IS NOT NULL');
+  const [[paymentMethod]] = await db.query("SHOW COLUMNS FROM payments LIKE 'method'");
+  if (!paymentMethod.Type.includes('bank_transfer')) {
+    await db.query("ALTER TABLE payments MODIFY method ENUM('cash','gcash','maya','bank_transfer') NOT NULL");
+  }
+  const [[paymentStatus]] = await db.query("SHOW COLUMNS FROM payments LIKE 'status'");
+  if (paymentStatus && !paymentStatus.Type.includes('partially_refunded')) {
+    await db.query(`ALTER TABLE payments MODIFY status ENUM(${statusValues}) NOT NULL`);
+  }
+
   const [indexes]=await db.query("SHOW INDEX FROM payments WHERE Key_name='payment_provider_reference'");
   if(!indexes.length)await db.query('CREATE UNIQUE INDEX payment_provider_reference ON payments(method,transaction_reference)');
   await db.query('INSERT IGNORE INTO resort_settings(id) VALUES (1)');

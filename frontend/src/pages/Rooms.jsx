@@ -7,7 +7,7 @@ import { RoomGallery } from '../admin/RoomExtras.jsx';
 import { useConfirm } from '../components/Confirm.jsx';
 
 const peso = n => new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP',minimumFractionDigits:0,maximumFractionDigits:2}).format(Number(n));
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date());
 
 export default function Rooms({ user, notice, setHeaderAction }) {
   const [rooms, setRooms] = useState([]);
