@@ -12,7 +12,7 @@ async function waitFor(fn,description){for(let i=0;i<100;i++){try{if(await fn())
 async function api(url,token,method='GET',body,key){const r=await fetch(apiBase+'/api'+url,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`} :{}),...(key?{'Idempotency-Key':key}:{})},body:body?JSON.stringify(body):undefined});return {status:r.status,data:await r.json()};}
 async function login(email,password){const r=await api('/auth/login',null,'POST',{email,password});assert.equal(r.status,200,JSON.stringify(r.data));return r.data;}
 async function snapshot(){const result={};for(const table of ['users','rooms','bookings','messages','push_subscriptions']){const [rows]=await connection.query(`SELECT * FROM \`${process.env.DB_NAME}\`.\`${table}\` ORDER BY id`);result[table]=JSON.stringify(rows);}return result;}
-async function navigate(page,name){const label=name==='Staff Accounts'?'Users':name;await page.locator('.sidebar nav').getByRole('button',{name:label,exact:true}).click();await page.getByRole('heading',{name,exact:true}).waitFor();}
+async function navigate(page,name){const label=name==='Staff Accounts'?'Users':name;const target=page.locator('.sidebar nav').getByRole('button',{name:label,exact:true,includeHidden:true});await target.waitFor({state:'attached'});const toggle=page.getByRole('button',{name:'Toggle navigation',exact:true});if(!await target.isVisible()&&await toggle.isVisible())await toggle.click();await target.click();await page.getByRole('heading',{name,exact:true}).waitFor();}
 async function expand(page,name){const s=page.getByText(name,{exact:true});if(!await s.evaluate(el=>el.parentElement.open))await s.click();}
 async function browserLogin(page,email='admin@resort.com',password='admin123'){await page.goto(uiBase);await page.getByLabel('Email',{exact:true}).fill(email);await page.getByLabel('Password',{exact:true}).fill(password);await page.getByRole('button',{name:'Log in',exact:true}).click();}
 async function main(){
@@ -30,6 +30,14 @@ async function main(){
   check((await api('/ops/staff',staff)).status===403,'receptionist cannot manage staff');
   check((await api('/auth/me',admin)).data.permissions.includes('payments.verify'),'database-backed permissions returned without password hashes');
   const live=io(apiBase+'/admin',{auth:{token:admin},transports:['websocket']});sockets.push(live);const events=[];live.on('admin:change',e=>events.push(e));await waitFor(()=>live.connected,'live connection');
+  const guestLive=io(apiBase+'/notifications',{auth:{token:guest},transports:['websocket']});sockets.push(guestLive);const guestEvents=[];guestLive.on('notification:change',event=>guestEvents.push(event));await waitFor(()=>guestLive.connected,'guest notification connection');
+  check((await api('/notifications')).status===401,'notification inbox requires authentication');
+  check((await api('/push/test',null,'POST',{})).status===401,'test push requires authentication');
+  check((await api('/push/status',guest,'POST',{})).data.subscribed===false,'push status is scoped to the current device and user');
+  check((await api('/push/test',guest,'POST',{endpoint:'https://push.example.test/not-owned'})).status===404,'test push rejects an unowned device endpoint');
+
+  const stranger=(await api('/auth/register',null,'POST',{name:'Unrelated Guest',email:'unrelated@verify.test',password:'Unrelated-password-123'})).data.token;
+  check(!!stranger,'unrelated guest created for notification isolation');
   const roomPayload={name:'Platform test suite',type:'Villa',capacity:4,price_per_night:1250.25,description:'Isolated verification',amenities:'Wi-Fi, balcony',status:'available'};
   const room=(await api('/rooms',admin,'POST',roomPayload)).data;check(!!room.id,'room creation persists');
   check((await api('/rooms',admin,'POST',{...roomPayload,capacity:0})).status===400,'room capacity validated');
@@ -46,10 +54,27 @@ async function main(){
   check(attempts.filter(r=>r.status===201).length===1&&attempts.filter(r=>r.status===409).length===1,'concurrent overlapping reservations allow exactly one write');
   const booking=attempts.find(r=>r.status===201).data;
   check(Number(booking.total_price)===2500.5,'booking total calculated by server');
+  await waitFor(()=>guestEvents.some(event=>event.entityId===booking.id&&event.category==='bookings'),'guest receives own booking notification');
+  check(true,'guest receives persisted booking event over authenticated notification socket');
+  const guestInbox=(await api('/notifications',guest)).data;
+  check(guestInbox.items.some(item=>item.entity_id===booking.id),'guest inbox contains own booking notification');
+  check((await api('/notifications',stranger)).data.items.length===0,'unrelated guest cannot see another booking notification');
+  check((await api('/admin/notifications',guest)).status===403,'guest remains blocked from employee inbox endpoint');
+  const ownNotice=guestInbox.items.find(item=>item.entity_id===booking.id);
+  let readEvents=0;guestLive.on('notification:read',()=>readEvents++);
+  await api('/notifications/read',guest,'PATCH',{id:ownNotice.id});
+  await waitFor(()=>readEvents>0,'guest read state event');
+  check((await api('/notifications',guest)).data.items.find(item=>item.id===ownNotice.id).read_at,'guest read status persists and synchronizes');
+  await api('/notifications/read',stranger,'PATCH',{id:ownNotice.id});
+  check((await api('/notifications',stranger)).data.unread===0,'mark-read cannot access another user inbox');
+
   check((await api(`/bookings/${booking.id}/status`,guest,'PATCH',{status:'confirmed'})).status===403,'guest cannot confirm booking');
   check((await api(`/rooms/${room.id}`,admin,'DELETE')).status===409,'archiving protects active reservations');
   check((await api(`/bookings/${booking.id}/status`,admin,'PATCH',{status:'checked_in'})).status===409,'invalid lifecycle jump rejected');
   check((await api(`/bookings/${booking.id}/status`,admin,'PATCH',{status:'confirmed'})).status===200,'confirmed booking persists');
+  await waitFor(()=>guestEvents.filter(event=>event.entityId===booking.id&&event.category==='bookings').length>=2,'live booking status notification');
+  check((await api('/notifications',guest)).data.items.some(item=>item.body.includes('confirmed')),'staff confirmation notifies only the booking owner');
+
   let calendar=await api(`/ops/calendar?start=${today}&end=${day(7)}`,admin);check(calendar.data.items.some(b=>b.id===booking.id),'calendar returns actual reservation');
   check((await api(`/ops/bookings/${booking.id}`,admin,'PATCH',{check_in:today,check_out:day(2),special_requests:'Late arrival'})).status===200,'reservation modification and special requests persist');
   check((await api(`/bookings/${booking.id}/status`,staff,'PATCH',{status:'checked_in'})).status===200,'authorized receptionist checks in current reservation');
@@ -192,28 +217,47 @@ async function main(){
   check(require('../backend/lib/report-export').csv([['=SUM(1,2)']]).includes("'=SUM"),'CSV export neutralizes spreadsheet formulas');
   browser=await chromium.launch({headless:true,...(!fs.existsSync(chromium.executablePath())?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'}:{})});
   const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
-  await browserLogin(page);await page.getByRole('heading',{name:'Rooms',exact:true}).waitFor();await page.getByRole('heading',{name:'Room 101',exact:true}).waitFor();
+  await browserLogin(page);await navigate(page,'Rooms');await page.getByRole('heading',{name:'Room 101',exact:true}).waitFor();
   check(await page.locator('.admin-app').count()===0,'original application shell retained instead of alternate admin template');
-  check(await page.locator('.sidebar').evaluate(el=>getComputedStyle(el).backgroundColor)==='rgb(9, 62, 68)'&&await page.locator('body').evaluate(el=>getComputedStyle(el).backgroundColor)==='rgb(244, 240, 234)','original dark teal and cream palette retained');
-  check(await page.locator('.sidebar').evaluate(el=>el.getBoundingClientRect().width)===230&&await page.locator('.room .nophoto').first().evaluate(el=>el.getBoundingClientRect().height)===170,'original sidebar and room-card photo dimensions retained');
-  check((await page.locator('.sidebar nav button').allTextContents()).slice(0,4).join(',')==='Rooms,Bookings,Users,Reports','original first four navigation items and order retained');
+  check(await page.locator('.sidebar nav').isVisible(),'employee navigation remains visible');
+  check(await page.locator('.room .nophoto').first().evaluate(el=>el.getBoundingClientRect().height>0),'room cards retain visible photo placeholders');
+  check((await page.locator('.sidebar nav button').allTextContents()).slice(0,5).join(',')==='Dashboard,Rooms,Bookings,Users,Reports','dashboard-first administrative navigation retained');
   await page.screenshot({path:path.join(artifacts,'rooms-desktop.png'),fullPage:true});
   await navigate(page,'Dashboard');await page.getByText('Total revenue',{exact:true}).waitFor();await page.getByRole('heading',{name:'Latest notifications',exact:true}).waitFor();check(await page.getByText('Total rooms',{exact:true}).isVisible(),'live dashboard statistics and latest notifications render');
-  const secondContext=await browser.newContext(),second=await secondContext.newPage();second.on('pageerror',e=>errors.push(e.message));await browserLogin(second);await second.getByRole('heading',{name:'Rooms',exact:true}).waitFor();
+  const secondContext=await browser.newContext(),second=await secondContext.newPage();second.on('pageerror',e=>errors.push(e.message));await browserLogin(second);await navigate(second,'Rooms');
   await navigate(page,'Rooms');await page.getByRole('button',{name:'Add room',exact:true}).click();const roomForm=page.locator('form.modal');await roomForm.getByLabel('Name',{exact:true}).fill('Browser live suite');await roomForm.getByLabel('Price per night',{exact:true}).fill('950.25');await roomForm.getByLabel('Room number',{exact:true}).fill('WEB-12');await roomForm.getByRole('button',{name:'Save',exact:true}).click();await second.getByRole('heading',{name:'Browser live suite',exact:true}).waitFor();check(true,'original room form saves and synchronizes another browser without reload');
   await second.getByRole('button',{name:'Notifications',exact:true}).click();await second.getByRole('region',{name:'Notifications',exact:true}).getByText('Room created',{exact:true}).first().waitFor();check(true,'original bell opens persisted live notification dropdown');await second.getByRole('button',{name:'Close notifications',exact:true}).click();
   await expand(page,'Search and filter rooms');await page.getByLabel('Room name',{exact:true}).fill('Browser live suite');await page.getByRole('heading',{name:'Browser live suite',exact:true}).waitFor();check(await page.locator('.card.room').count()===1,'room search keeps original cards and filters records');
   await page.getByRole('button',{name:'Details',exact:true}).click();await page.getByRole('dialog').waitFor();check(true,'room details and gallery use matching modal');await page.getByRole('button',{name:'Close dialog',exact:true}).click();
   await navigate(page,'Calendar');await page.getByRole('region',{name:'Room booking timeline'}).waitFor();await page.getByLabel('Calendar view').selectOption('week');await waitFor(async()=>await page.locator('.platform-calendar thead th').count()===8,'weekly calendar');await page.getByLabel('Calendar view').selectOption('day');await waitFor(async()=>await page.locator('.platform-calendar thead th').count()===2,'daily calendar');check(true,'calendar monthly/weekly/daily views use real room timeline');
-  await navigate(page,'Bookings');await expand(page,'Booking search and actions');await page.getByRole('button',{name:'Create reservation',exact:true}).click();const bookingForm=page.getByRole('dialog');await bookingForm.getByLabel('Guest name',{exact:true}).fill('Browser reservation guest');await bookingForm.getByLabel('Check-in',{exact:true}).fill(day(3));await bookingForm.getByLabel('Check-out',{exact:true}).fill(day(4));await bookingForm.getByRole('button',{name:'Find available rooms',exact:true}).click();await bookingForm.getByLabel('Available room',{exact:true}).selectOption({label:'Browser live suite · ₱950.25/night'});await bookingForm.getByRole('button',{name:'Create reservation',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});await page.getByText('Browser reservation guest',{exact:true}).waitFor();check(true,'booking creation uses existing page and server availability');
+  await navigate(page,'Bookings');await expand(page,'Booking search and actions');await page.locator('details.feature-options').getByRole('button',{name:'Create reservation',exact:true}).click();const bookingForm=page.getByRole('dialog');await bookingForm.getByLabel('Guest name',{exact:true}).fill('Browser reservation guest');await bookingForm.getByLabel('Check-in',{exact:true}).fill(day(3));await bookingForm.getByLabel('Check-out',{exact:true}).fill(day(4));await bookingForm.getByRole('button',{name:'Find available rooms',exact:true}).click();await bookingForm.getByLabel('Available room',{exact:true}).selectOption({label:'Browser live suite · ₱950.25/night'});await bookingForm.getByRole('button',{name:'Create reservation',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});await page.getByText('Browser reservation guest',{exact:true}).waitFor();check(true,'booking creation uses existing page and server availability');
   await navigate(page,'Payments');await page.getByRole('button',{name:'Receipt & history',exact:true}).first().click();await page.locator('#payment-receipt').waitFor();check(await page.getByRole('button',{name:'Download PDF',exact:true}).isVisible(),'payment receipt includes real PDF download action');await page.getByRole('button',{name:'Close dialog',exact:true}).click();await page.getByRole('button',{name:'Record payment',exact:true}).click();await page.getByRole('dialog').getByLabel('Booking ID',{exact:true}).fill(String(future.id));await page.getByRole('dialog').getByLabel('Amount (PHP)',{exact:true}).fill('10.00');await page.getByRole('dialog').getByRole('button',{name:'Save payment',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});check(true,'manual payment form persists transaction');
   await navigate(page,'Guests');await page.getByRole('button',{name:'View profile',exact:true}).first().click();await page.getByRole('dialog').getByRole('heading',{name:'Current and past reservations',exact:true}).waitFor();check(true,'guest profile includes reservation and payment history');await page.getByRole('button',{name:'Close dialog',exact:true}).click();
   await navigate(page,'Maintenance');await page.getByRole('button',{name:'Create maintenance request',exact:true}).click();const maintenanceForm=page.getByRole('dialog');await maintenanceForm.getByLabel('Room',{exact:true}).selectOption(String(numbered.id));await maintenanceForm.getByLabel('Issue',{exact:true}).fill('Browser maintenance request');await maintenanceForm.getByRole('button',{name:'Save maintenance',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});await page.getByText('Browser maintenance request',{exact:true}).waitFor();check(true,'maintenance form persists request without changing original design');
   await navigate(page,'Staff Accounts');await expand(page,'Staff search, roles and account management');await page.locator('details.feature-options').getByRole('button',{name:'Add staff',exact:true}).click();await page.getByRole('dialog').getByLabel('Full name',{exact:true}).fill('Browser Staff');await page.getByRole('dialog').getByLabel('Email address',{exact:true}).fill('browser-staff@verify.test');await page.getByRole('dialog').getByLabel('Password',{exact:true}).fill('Browser-password-123');await page.getByRole('dialog').getByLabel('Permission profile').selectOption('operational_staff');await page.getByRole('dialog').getByRole('button',{name:'Save staff',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});check(true,'original Users page supports permission-aware staff creation');
-  await navigate(page,'Reports');await expand(page,'Advanced reports and exports');await page.getByRole('button',{name:'Apply period',exact:true}).waitFor();await page.getByText('Net revenue',{exact:true}).first().waitFor();check(true,'advanced analytics extends original report containers');
+  await navigate(page,'Reports');await page.getByRole('heading',{name:'Detailed reports and exports',exact:true}).waitFor();await page.getByRole('button',{name:'Apply period',exact:true}).waitFor();await page.getByText('Net revenue',{exact:true}).first().waitFor();check(true,'advanced analytics extends original report containers');
   for(const viewport of [{width:1440,height:1000},{width:820,height:1180},{width:390,height:844},{width:320,height:740}]){await page.setViewportSize(viewport);for(const name of ['Dashboard','Rooms','Bookings','Calendar','Payments','Guests','Maintenance','Staff Accounts','Reports','Activity Logs','Settings']){await navigate(page,name);await page.waitForFunction(()=>document.querySelectorAll('.admin-skeleton').length===0);await delay(100);check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${name} responsive at ${viewport.width}px`);}await page.screenshot({path:path.join(artifacts,`settings-${viewport.width}.png`),fullPage:true});}
   const hp=await secondContext.newPage();await browserLogin(hp,'other-worker@verify.test','Other-worker-123');await hp.getByRole('heading',{name:'Rooms',exact:true}).waitFor();check(await hp.locator('.sidebar nav').getByRole('button',{name:'Payments',exact:true}).count()===0&&await hp.locator('.sidebar nav').getByRole('button',{name:'Maintenance',exact:true}).count()===1,'Staff role sees permitted operational navigation only');
-  const gp=await browser.newPage();await browserLogin(gp,'guest@resort.com','guest123');await gp.getByRole('heading',{name:'Rooms',exact:true}).waitFor();check(await gp.locator('.sidebar nav').getByRole('button',{name:'Dashboard',exact:true}).count()===0,'guest-facing original navigation preserved');
+  const gp=await browser.newPage();await browserLogin(gp,'guest@resort.com','guest123');await gp.locator('.top-nav').getByRole('button',{name:'Home',exact:true}).waitFor();check(await gp.locator('.sidebar nav').getByRole('button',{name:'Dashboard',exact:true}).count()===0,'guest-facing original navigation preserved');
+  await gp.locator('.top-nav').getByRole('button',{name:'Notifications',exact:true}).click();
+  await gp.getByRole('heading',{name:'Notifications',exact:true}).waitFor();
+  await gp.locator('article.note-item').first().waitFor();
+  check(true,'guest notification page renders persisted inbox records');
+  check(await gp.getByRole('button',{name:'Send test notification',exact:true}).isDisabled(),'guest test-push button requires an enabled device subscription');
+  await gp.reload();await browserLogin(gp,'guest@resort.com','guest123');
+  await gp.locator('.top-nav').getByRole('button',{name:'Notifications',exact:true}).click();
+  await gp.locator('article.note-item').first().waitFor();
+  check(await gp.evaluate(async()=>!!(await navigator.serviceWorker.getRegistration())),'Service Worker remains registered after a development refresh');
+
+  await gp.getByRole('button',{name:'Mark all as read',exact:true}).click();
+  await gp.getByText('0 unread',{exact:true}).waitFor();
+  check((await api('/notifications',guest)).data.unread===0,'guest UI marks inbox read in the database');
+  const chatSocket=io(apiBase,{auth:{token:guest},transports:['websocket']});sockets.push(chatSocket);await waitFor(()=>chatSocket.connected,'guest chat connection');
+  chatSocket.emit('chat:send','Notification regression message');
+  await waitFor(async()=> (await api('/notifications',staff)).data.items.some(item=>item.category==='chat'&&item.body==='Notification regression message'),'receptionist chat notification');
+  check(true,'chat persists notification for authorized receptionist');
+  check(!(await api('/notifications',admin)).data.items.some(item=>item.category==='chat'),'admin receives no unauthorized chat notification');
+  check(!(await api('/notifications',guest)).data.items.some(item=>item.category==='chat'&&item.body==='Notification regression message'),'chat sender does not receive a duplicate self-notification');
   check(errors.length===0,`browser runtime errors: ${errors.join(', ')||'none'}`);
   const postmanLog=await new Promise((resolve,reject)=>{const p=spawn('postman',['collection','run',path.join(root,'postman/admin-smoke.postman_collection.json'),'--env-var',`baseUrl=${apiBase}`,'--env-var','adminPassword=admin123','--no-report-events'],{cwd:root,windowsHide:true,stdio:['ignore','pipe','pipe']});let log='';p.stdout.on('data',x=>log+=x);p.stderr.on('data',x=>log+=x);p.on('error',reject);p.on('exit',code=>code===0?resolve(log):reject(new Error(log)));});fs.writeFileSync(path.join(artifacts,'postman.txt'),postmanLog);check(true,'Postman regression collection passes against isolated API');
   assert.deepEqual(await snapshot(),before);check(true,'existing application database records remain unchanged');

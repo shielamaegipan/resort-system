@@ -14,23 +14,14 @@ async function auth(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Please log in' });
-  try {
-    req.user = verifyToken(token);
-  } catch (err) {
-    console.warn('[auth] 401:', req.method, req.originalUrl, '-', err.name, '-', err.message);
-    return res.status(401).json({
-      error: err.name === 'TokenExpiredError'
-        ? 'Session expired. Please log in again.'
-        : 'Invalid session. Please log in again.',
-    });
-  }
+  try { req.user=verifyToken(token); } catch { return res.status(401).json({error:'Session expired. Please log in again.'}); }
   try {
     const [[user]] = await require('../db').query('SELECT id,name,email,role,permission_role,token_version FROM users WHERE id=? AND deleted_at IS NULL', [req.user.id]);
     if (!user) return res.status(401).json({ error: 'This account is inactive. Please contact the administrator.' });
     if ((req.user.version || 0) !== user.token_version) return res.status(401).json({ error: 'Access changed. Please log in again.' });
     req.user = user;
     next();
-  } catch (error) { next(error); }
+  } catch(error) { next(error); }
 }
 
 module.exports = { auth, signToken, verifyToken };

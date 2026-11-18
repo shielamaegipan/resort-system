@@ -63,6 +63,8 @@ async function migrate() {
     await db.query(`ALTER TABLE payments MODIFY status ENUM(${statusValues}) NOT NULL`);
   }
 
+  const [paymentKeys] = await db.query('SHOW INDEX FROM payments');
+  if (!paymentKeys.some(index => index.Column_name === 'idempotency_key' && index.Non_unique === 0)) await db.query('CREATE UNIQUE INDEX payment_idempotency_key ON payments(idempotency_key)');
   const [indexes]=await db.query("SHOW INDEX FROM payments WHERE Key_name='payment_provider_reference'");
   if(!indexes.length)await db.query('CREATE UNIQUE INDEX payment_provider_reference ON payments(method,transaction_reference)');
   await db.query('INSERT IGNORE INTO resort_settings(id) VALUES (1)');

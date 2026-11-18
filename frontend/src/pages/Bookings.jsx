@@ -19,7 +19,7 @@ export function actionsFor(role, status) {
   return [];
 }
 
-export default function Bookings({ user, notice }) {
+export default function Bookings({ user, notice, initialFilters }) {
   const [rows, setRows] = useState([]);
   const [error, setError] = useState(''), [loading, setLoading] = useState(true);
   const [archived, setArchived] = useState([]);
@@ -30,6 +30,7 @@ export default function Bookings({ user, notice }) {
   const isGuest = user.role === 'guest';
   const [detail, setDetail] = useState(null), [creating, setCreating] = useState(false), [rooms, setRooms] = useState([]), [page, setPage] = useState(1), [meta, setMeta] = useState(null);
   const [filters, setFilters] = useState({ search: '', status: '', start: '', end: '', room_id: '', user_id: '' });
+  useEffect(() => { if (user.role === 'admin') { setFilters({ search: '', status: '', start: '', end: '', room_id: '', user_id: '', ...initialFilters }); setPage(1); setTab('active'); } }, [initialFilters, user.role]);
   const applied = useDebounced(filters);
   useEffect(() => { if (!isGuest) api('/rooms').then(setRooms).catch((e) => notice(e.message)); }, [isGuest, notice]);
 

@@ -13,7 +13,7 @@ const { Server } = require('socket.io');
 const db = require('./db');
 const { auth, verifyToken } = require('./middleware/auth');
 const { requirePermission, audit, profile } = require('./lib/permissions');
-const { router: pushRouter, notify } = require('./routes/push');
+const { router: pushRouter } = require('./routes/push');
 
 const app = express();
 const server = http.createServer(app);
@@ -67,78 +67,24 @@ const UPLOAD_DIR = require('./lib/uploads').publicDir;
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-
-// ---------- Booking notifications (who gets told about what) ----------
-const GUEST_MESSAGE = {
-  confirmed: (b) => ['Booking confirmed', `Your booking for ${b.room_name} from ${b.check_in} to ${b.check_out} is confirmed.`],
-  checked_in: (b) => ['You are checked in', `You are checked in to ${b.room_name}. Enjoy your stay!`],
-  checked_out: (b) => ['Checked out', `You checked out of ${b.room_name}. Thank you for staying with us!`],
-  cancelled: (b) => ['Booking cancelled', `Your booking for ${b.room_name} from ${b.check_in} to ${b.check_out} was cancelled.`],
-  no_show: (b) => ['Booking marked as no show', `Your booking for ${b.room_name} was marked as no show.`],
-};
-async function notifyBookingChange(req, match, body) {
-  if (!body || !body.id) return;
-  const isStatus = match[3] === 'status';
-  const isCreate = req.method === 'POST' && !match[2] && !match[3];
-  if (req.user.role === 'guest') {
-    if (isCreate) {
-      const date = (d) => String(d).slice(0, 10);
-      const text = `${body.guest_name} booked ${body.room_name}, ${date(body.check_in)} to ${date(body.check_out)}`;
-      const stored = await realtime.publish('bookings', 'New booking', text, body.id);
-      // Same recipients as the in-app inbox, so the device alert matches what the system shows.
-      notify({ userIds: stored, title: 'New booking', body: text, category: 'bookings', entityId: body.id }).catch(console.error);
-    } else if (isStatus && body.status === 'cancelled') {
-      const text = `${body.guest_name} cancelled ${body.room_name}`;
-      const stored = await realtime.publish('bookings', 'Booking cancelled by guest', text, body.id);
-      notify({ userIds: stored, title: 'Booking cancelled by guest', body: text, category: 'bookings', entityId: body.id }).catch(console.error);
-    }
-    return;
-  }
-  // Staff or admin changed it: tell the guest who owns the booking.
-  if (!isStatus || !body.user_id || !GUEST_MESSAGE[body.status]) return;
-  const date = (d) => String(d).slice(0, 10);
-  const [title, text] = GUEST_MESSAGE[body.status]({ ...body, check_in: date(body.check_in), check_out: date(body.check_out) });
-  await realtime.notifyUser(body.user_id, 'bookings', title, text, body.id);
-  notify({ userIds: [body.user_id], title, body: text, category: 'bookings', entityId: body.id, audience: 'guest' }).catch(console.error);
-}
-
 // Existing JSON response shapes are preserved. Successful writes invalidate Admin caches.
 app.use('/api', (req, res, next) => {
-  const match = /^\/(rooms|bookings|users)(?:\/(\d+))?(?:\/(status|restore|image))?$/.exec(req.path);
+  const match = /^\/(rooms|bookings|users)(?:\/(\d+))?(?:\/(status|restore|image|check-in|check-out))?$/.exec(req.path);
   if (match && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     const send = res.json.bind(res);
     res.json = (body) => {
       if (res.statusCode >= 400) return send(body);
       const category = match[1];
-      const send2 = () => send(body);
-      if (category === 'bookings') {
-        // Booking alerts go to the other side only:
-        //  guest books / cancels  -> staff and admin
-        //  staff or admin updates -> the guest who owns the booking
-        return notifyBookingChange(req, match, body).catch((error) => console.error('Booking notification failed:', error.message)).then(send2);
-      }
       const action = match[3] === 'restore' ? 'restored' : req.method === 'DELETE' ? (category === 'users' ? 'deactivated' : 'archived') : req.method === 'POST' && !match[2] ? 'created' : 'updated';
-      const title = `${category === 'users' ? 'Staff account' : 'Room'} ${action}`;
+      const title = `${category === 'users' ? 'Staff account' : category === 'rooms' ? 'Room' : 'Booking'} ${action}`;
       return realtime.publish(category, title, `${body.name || body.guest_name || '#' + (match[2] || body.id)}${body.status ? ' · ' + body.status.replaceAll('_', ' ') : ''}`, match[2] || body.id)
-        .catch((error) => console.error('Admin event failed:', error.message)).then(send2);
+        .catch((error) => console.error('Admin event failed:', error.message)).then(() => send(body));
     };
   }
   next();
 });
-
-// ---------- In-app notification inbox for guests ----------
-app.get('/api/my-notifications', auth, async (req, res) => {
-  const [items] = await db.query('SELECT id,category,title,body,entity_id,read_at,created_at FROM admin_notifications WHERE user_id=? ORDER BY id DESC LIMIT 100', [req.user.id]);
-  const [[count]] = await db.query('SELECT COUNT(*) AS unread FROM admin_notifications WHERE user_id=? AND read_at IS NULL', [req.user.id]);
-  res.json({ items, unread: Number(count.unread) });
-});
-app.patch('/api/my-notifications/read', auth, async (req, res) => {
-  const id = req.body && req.body.id != null ? Number(req.body.id) : null;
-  if (id !== null && !Number.isInteger(id)) return res.status(400).json({ error: 'Invalid notification' });
-  await db.query(`UPDATE admin_notifications SET read_at=COALESCE(read_at,NOW()) WHERE user_id=? ${id ? 'AND id=?' : ''}`, id ? [req.user.id, id] : [req.user.id]);
-  res.json({ ok: true });
-});
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/ops', require('./routes/operations'));
 app.use('/api/advanced', require('./routes/advanced'));
 app.use('/api/auth', require('./routes/auth'));
@@ -293,7 +239,6 @@ app.get('/api/bookings/archived', auth, allow('admin'), async (req, res) => {
 
 app.post('/api/bookings', auth, allow('guest','admin','staff'), async (req, res) => {
   const row = await bookings.create(req.user.id, req.body);
-  // The staff/admin alert (inbox + device push) is sent by notifyBookingChange above.
   res.status(201).json(row);
 });
 
@@ -481,8 +426,6 @@ app.get('/api/rooms/availability', auth, allow('staff', 'admin'), wrap(async (re
 }));
 
 // ---------- 3. CHECK-IN / CHECK-OUT ----------
-// The checks and messages below are for the front desk. The status change itself goes through
-// bookings.change() so room readiness, the activity log and live updates stay consistent.
 app.post('/api/bookings/:id/check-in', auth, allow('staff', 'admin'), wrap(async (req, res) => {
   const [[b]] = await db.query(
     'SELECT b.*, (b.check_in <= CURDATE()) AS arrived, (b.check_out > CURDATE()) AS not_expired FROM bookings b WHERE b.id = ? AND b.deleted_at IS NULL', [req.params.id]
@@ -676,7 +619,7 @@ io.on('connection', (socket) => {
       sender_id: socket.user.id,
       sender_name: socket.user.name,
     });
-    notify({ exceptUserId: socket.user.id, roles: ['guest', 'staff'], title: socket.user.name, body: text }).catch(console.error);
+    realtime.publishChat(current, text, r.insertId).catch(error => console.error('Chat notification failed:', error.message));
     } catch(error){console.error('Chat delivery failed:',error.message);socket.emit('chat:error','Message could not be sent');}
   });
 });
@@ -737,7 +680,6 @@ async function seedRooms() {
 
 
 // ---------- Auto-create the staff-feature tables (services, booking_services, payments) ----------
-// Runs after the Admin migrations (see start() below), so a table the migrations already define is left alone.
 async function ensureStaffTables() {
   await db.query(`CREATE TABLE IF NOT EXISTS services (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -790,7 +732,7 @@ async function start() {
   await require('./migrate-admin')();
   await require('./migrate-platform')();
   await require('./migrate-advanced')();
-  await ensureStaffTables().catch((e) => console.warn('Staff tables setup failed:', e.message));
+  await ensureStaffTables();
   if(process.env.SEED_DEMO==='true'&&process.env.NODE_ENV!=='production'){await seedUsers();await seedRooms();}
   require('./lib/reminders').start();
   server.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));

@@ -6,6 +6,9 @@ import Login from './pages/Login.jsx';
 import { AdminProvider } from './admin/data.jsx';
 import { FeaturePage } from './features/Pages.jsx';
 import Notifications, { EmployeeSync, NotificationRecord } from './features/Notifications.jsx';
+import { GuestNotificationBell, NotificationSession } from './features/notification-client.jsx';
+import AdminReports from './admin/AdminReports.jsx';
+import AdminActivity from './admin/AdminActivity.jsx';
 
 /* Finds every page file by its name, so a missing page never crashes the app.
    (pages/admin/Name.jsx is preferred for the admin, then pages/Name.jsx) */
@@ -218,6 +221,7 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [related, setRelated] = useState(null);
+  const [bookingFilter, setBookingFilter] = useState(null);
 
   const notice = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(''), 3500); }, []);
 
@@ -243,12 +247,30 @@ export default function App() {
   // otherwise ask once on the first tap (browsers only allow the prompt after a user gesture)
   useEffect(() => {
     if (!user || typeof Notification === 'undefined' || !('serviceWorker' in navigator)) return;
-    const subscribe = () => PUSH.enablePush().catch(() => {});
-    if (Notification.permission === 'granted') { subscribe(); return; }
+    const subscribe = () => PUSH.ensurePushEnabled({ requestPermission: true }).catch(() => {});
+    if (Notification.permission === 'granted') {
+      const restore = () => PUSH.ensurePushEnabled().catch(() => {});
+      restore();
+      window.addEventListener('focus', restore);
+      window.addEventListener('online', restore);
+      return () => { window.removeEventListener('focus', restore); window.removeEventListener('online', restore); };
+    }
     if (Notification.permission !== 'default') return;
     const onTap = () => { subscribe(); };
     window.addEventListener('pointerdown', onTap, { once: true });
     return () => window.removeEventListener('pointerdown', onTap);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const open = () => user.role === 'guest' ? setPage('notifications') : setNotificationOpen(true);
+    const onMessage = event => { if (event.data?.type === 'open-notifications') open(); };
+    navigator.serviceWorker?.addEventListener('message', onMessage);
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('notifications') === '1') {
+      open(); url.searchParams.delete('notifications'); window.history.replaceState(null, '', url);
+    }
+    return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
   }, [user]);
 
   if (!user) {
@@ -260,7 +282,7 @@ export default function App() {
   const perms = employee ? user.permissions : null;
 
   const base = MENUS[role]
-    .map(([key, label, names]) => ({ key, label, Comp: findPage(names, role) }))
+    .map(([key, label, names]) => ({ key, label, Comp: role === 'admin' && key === 'reports' ? AdminReports : findPage(names, role) }))
     .filter((i) => i.Comp)
     .filter((i) => !perms || !GATE[i.key] || perms.includes(GATE[i.key]));
   const extras = perms
@@ -271,20 +293,23 @@ export default function App() {
   const items = [...base, ...extras];
   const current = items.find((i) => i.key === page) || items[0];
 
-  const goTo = (key) => {
+  const goTo = (key, filters = null) => {
+    if (key === 'mybookings') key = 'bookings';
     if (!items.some((i) => i.key === key)) return;
+    setBookingFilter(key === 'bookings' ? filters : null);
     setHeaderAction(null); setMenuOpen(false); setPage(key);
   };
-  const logout = () => { API.setToken(null); setUser(null); setMenuOpen(false); setNotificationOpen(false); setRelated(null); };
-  const enableBell = async () => {
-    try { await PUSH.enablePush(); notice('Notifications enabled'); } catch (e) { notice(e.message); }
+  const logout = async () => {
+    try { await PUSH.disablePushForSession(); }
+    catch (error) { notice(`Could not disable this device's notifications: ${error.message}. Try logging out again.`); return; }
+    API.setToken(null); setUser(null); setMenuOpen(false); setNotificationOpen(false); setRelated(null);
   };
 
   const Page = current?.Comp;
   const pageEl = current?.extra
-    ? <FeaturePage page={current.key} user={user} goTo={goTo} />
+    ? current.key === 'activity' && role === 'admin' ? <AdminActivity/> : <FeaturePage page={current.key} user={user} goTo={goTo} />
     : Page
-      ? <Page user={user} notice={notice} goTo={goTo} setHeaderAction={setHeaderAction} />
+      ? <Page user={user} notice={notice} goTo={goTo} initialFilters={bookingFilter} setHeaderAction={setHeaderAction} />
       : <p>Nothing to show.</p>;
 
   // Guests turn on push notifications; admin and staff open the notifications panel
@@ -293,7 +318,7 @@ export default function App() {
       <Bell label="Notifications" expanded={notificationOpen} onClick={() => setNotificationOpen(!notificationOpen)} />
       <Notifications user={user} open={notificationOpen} onClose={() => setNotificationOpen(false)} onRecord={setRelated} goTo={goTo} />
     </span>
-  ) : <Bell onClick={enableBell} />;
+  ) : <GuestNotificationBell onClick={() => goTo('notifications')} />;
 
   const brand = (
     <div className="shell-brand"><img src="/icon.svg" alt="" width="40" height="40" /><span>Resort</span></div>
@@ -301,6 +326,7 @@ export default function App() {
 
   const layout = (
     <div className={role === 'guest' ? 'shell shell-top' : 'shell shell-side'}>
+      <NotificationSession user={user}/>
       {role === 'guest' ? (
         <>
           <header className="top">

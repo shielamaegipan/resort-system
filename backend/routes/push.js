@@ -20,6 +20,38 @@ if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
 
 router.get('/key', (req, res) => res.json({ publicKey: enabled ? VAPID_PUBLIC_KEY : '' }));
 
+router.post('/status', auth, async (req, res) => {
+  const endpoint = typeof req.body?.endpoint === 'string' ? req.body.endpoint : '';
+  const [[row]] = await db.query('SELECT COUNT(*) subscriptions FROM push_subscriptions WHERE user_id=? AND endpoint=?', [req.user.id, endpoint]);
+  res.json({ configured: enabled, subscribed: Number(row.subscriptions) > 0 });
+});
+
+const testRequests = new Map();
+router.post('/test', auth, async (req, res) => {
+  if (!enabled) return res.status(503).json({ error: 'Push is not configured on the server. Contact the administrator.' });
+  const endpoint = typeof req.body?.endpoint === 'string' ? req.body.endpoint : '';
+  const [[subscription]] = await db.query('SELECT * FROM push_subscriptions WHERE user_id=? AND endpoint=?', [req.user.id, endpoint]);
+  if (!subscription) return res.status(404).json({ error: 'Enable push notifications on this device first.' });
+  const now = Date.now();
+  for (const [id, expires] of testRequests) if (expires <= now) testRequests.delete(id);
+  if ((testRequests.get(req.user.id) || 0) > now) return res.status(429).json({ error: 'Wait 10 seconds before sending another test.' });
+  testRequests.set(req.user.id, now + 10000);
+  try {
+    await webpush.sendNotification({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, JSON.stringify({
+      title: 'Resort push notification', body: 'Push notifications are working. You can receive booking and chat alerts on this device.',
+      tag: `push-test-${req.user.id}-${now}`, url: '/?notifications=1',
+    }), { timeout: 5000, TTL: 60 });
+    res.status(202).json({ accepted: true });
+  } catch (error) {
+    if (error.statusCode === 404 || error.statusCode === 410) {
+      await db.query('DELETE FROM push_subscriptions WHERE id=? AND user_id=?', [subscription.id, req.user.id]);
+      return res.status(410).json({ error: 'This device subscription expired. Enable push notifications again.' });
+    }
+    console.warn('Test push failed:', error.statusCode || error.code || 'DELIVERY_ERROR');
+    res.status(502).json({ error: 'The push service could not accept the test. Check your connection and server push keys, then try again.' });
+  }
+});
+
 router.post('/subscribe', auth, async (req, res) => {
   const { endpoint, keys } = req.body || {};
   if (!endpoint || !keys?.p256dh || !keys?.auth) return res.status(400).json({ error: 'Invalid subscription' });
@@ -31,52 +63,30 @@ router.post('/subscribe', auth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Send a push to devices. Optional `roles` / `userIds` limit who receives it.
-// The payload carries enough for the service worker to show a useful, clickable alert.
-async function notify({ exceptUserId, roles, userIds, title, body, category, entityId, url, audience }) {
-  const result = { sent: 0, failed: 0, subscriptions: 0 };
-  if (!enabled) return result;
+router.delete('/subscribe', auth, async (req, res) => {
+  await db.query('DELETE FROM push_subscriptions WHERE user_id=? AND endpoint=?', [req.user.id, String(req.body.endpoint || '')]);
+  res.json({ ok: true });
+});
+
+// Send a push to everyone except the sender. Optional `roles` limits who receives it.
+async function notify({ exceptUserId, roles, userIds, title, body, url = '/', tag }) {
+  if (!enabled) return;
+  if (userIds && !userIds.length) return;
   let sql = `SELECT ps.* FROM push_subscriptions ps JOIN users u ON u.id = ps.user_id
              WHERE u.deleted_at IS NULL AND ps.user_id <> ?`;
   const params = [exceptUserId || 0];
   if (roles && roles.length) { sql += ` AND u.role IN (${roles.map(() => '?').join(',')})`; params.push(...roles); }
-  if (Array.isArray(userIds)) {
-    if (!userIds.length) return result;
-    sql += ` AND ps.user_id IN (${userIds.map(() => '?').join(',')})`; params.push(...userIds);
-  }
+  if (userIds) { sql += ` AND ps.user_id IN (${userIds.map(() => '?').join(',')})`; params.push(...userIds); }
   const [subs] = await db.query(sql, params);
-  result.subscriptions = subs.length;
-  const payload = JSON.stringify({
-    title, body: String(body || '').slice(0, 300),
-    category: category || null, entityId: entityId || null, audience: audience || 'admin',
-    url: url || '/', tag: category && entityId ? `${category}-${entityId}` : undefined
-  });
+  const payload = JSON.stringify({ title, body, url, tag });
   await Promise.all(subs.map(async (s) => {
     try {
-      await webpush.sendNotification(
-        { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-        payload,
-        { TTL: 60 * 60 * 24, urgency: 'high' }
-      );
-      result.sent++;
+      await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { timeout: 5000, TTL: 3600 });
     } catch (e) {
-      result.failed++;
-      if (e.statusCode === 404 || e.statusCode === 410) {
-        await db.query('DELETE FROM push_subscriptions WHERE id = ?', [s.id]); // device unsubscribed
-      } else {
-        // Do not hide delivery problems: 401/403 = bad VAPID key or subject, 413 = payload too large.
-        console.warn(`Push failed for user ${s.user_id} (${e.statusCode || e.code || 'error'}): ${e.body || e.message}`);
-      }
+      if (e.statusCode === 404 || e.statusCode === 410) await db.query('DELETE FROM push_subscriptions WHERE id = ?', [s.id]);
+      else console.warn('Push delivery failed:', e.statusCode || e.code || e.message);
     }
   }));
-  return result;
 }
-
-// Sends a test alert to the logged-in user's own devices, to check the device setup.
-router.post('/test', auth, async (req, res) => {
-  if (!enabled) return res.status(503).json({ error: 'Push is disabled: check VAPID keys in backend/.env' });
-  const result = await notify({ userIds: [req.user.id], title: 'Test notification', body: 'Device notifications are working.', category: 'test', audience: req.user.role === 'guest' ? 'guest' : 'admin' });
-  res.json(result);
-});
 
 module.exports = { router, notify };
