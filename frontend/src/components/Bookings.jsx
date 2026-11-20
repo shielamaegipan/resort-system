@@ -64,7 +64,7 @@ export default function Bookings({ user, online, tick }) {
           {rooms.map((r) => <option key={r.id} value={r.id}>{r.name} · {peso(r.price_per_night)} · max {r.capacity}</option>)}
         </select>
         <input placeholder="Guest name" value={f.guest_name} onChange={set('guest_name')} required />
-        <input placeholder="Contact (phone/email)" value={f.guest_contact} onChange={set('guest_contact')} />
+        <input required type="tel" inputMode="numeric" pattern="[0-9]{11}" maxLength={11} placeholder="Contact number (11 digits)" value={f.guest_contact} onChange={(e) => setF({ ...f, guest_contact: e.target.value.replace(/\D/g, '').slice(0, 11) })} />
         <input type="number" min="1" placeholder="Number of guests" value={f.guests} onChange={set('guests')} required />
         <label>Check-in<input type="date" value={f.check_in} onChange={set('check_in')} required /></label>
         <label>Check-out<input type="date" value={f.check_out} onChange={set('check_out')} required /></label>

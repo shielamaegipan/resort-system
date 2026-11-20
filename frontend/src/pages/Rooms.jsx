@@ -207,7 +207,7 @@ function BookForm({ room, user, dates, onClose, notice }) {
       <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
         <h2>Book {room.name}</h2>{ranges.length > 0 && <div className="muted"><strong>Already booked:</strong>{ranges.map((x, i) => <div key={i}>{x.check_in} → {x.check_out}</div>)}<div>You can book any other dates.</div></div>}
         <label>Guest name<input value={f.guest_name} onChange={set('guest_name')} required /></label>
-        <label>Contact number<input required value={f.guest_contact} onChange={set('guest_contact')} /></label>
+        <label>Contact number<input required type="tel" inputMode="numeric" pattern="[0-9]{11}" minLength={11} maxLength={11} placeholder="09XXXXXXXXX" title="11-digit number, numbers only" value={f.guest_contact} onChange={(e) => setF({ ...f, guest_contact: e.target.value.replace(/\D/g, '').slice(0, 11) })} /></label>
         <div className="two">
           <label>Check-in<input type="date" min={today()} value={f.check_in} onChange={set('check_in')} required /></label>
           <label>Check-out<input type="date" min={f.check_in || today()} value={f.check_out} onChange={set('check_out')} required /></label>

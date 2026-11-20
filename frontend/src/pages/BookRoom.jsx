@@ -127,7 +127,7 @@ export default function BookRoom({ user, notice, goTo }) {
             <label>Check-out<input type="date" required min={f.check_in} value={f.check_out} onChange={(e) => setF({ ...f, check_out: e.target.value })} /></label>
             <label>Guests<input type="number" min="1" max={sel.capacity} style={{ width: 80 }} value={f.guests} onChange={(e) => setF({ ...f, guests: e.target.value })} /></label>
             <label>Guest name<input required value={name} onChange={(e) => setName(e.target.value)} /></label>
-            <label>Contact (phone/email)<input required value={contact} onChange={(e) => setContact(e.target.value)} /></label>
+           <label>Contact number<input required type="tel" inputMode="numeric" pattern="[0-9]{11}" minLength={11} maxLength={11} placeholder="09XXXXXXXXX" title="11-digit number, numbers only" value={contact} onChange={(e) => setContact(e.target.value.replace(/\D/g, '').slice(0, 11))} /></label>
             <button className="primary" disabled={busy || !validDates || clash || tooMany}>
               {busy ? 'Sending…' : validDates ? `Book · ${peso(sel.price_per_night * nights)}` : 'Choose dates'}
             </button>

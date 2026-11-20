@@ -23,7 +23,7 @@ async function noOverlap(c, b) {
 async function create(userId, body) {
   const roomId = v.integer(body.room_id, 'Room ID', 2147483647);
   const name = v.text(body.guest_name, 'Guest name', 120);
-  const contact = v.text(body.guest_contact, 'Contact', 120, true);
+  const contact = String(body.guest_contact ?? '').trim(); if (!/^\d{11}$/.test(contact)) v.fail(400, 'Contact number must be exactly 11 digits (numbers only)');
   const guests = v.integer(body.guests ?? 1, 'Guests');
   const nights = v.dates(body.check_in, body.check_out);
   if (body.check_in < v.today()) v.fail(400, 'Check-in cannot be in the past');
