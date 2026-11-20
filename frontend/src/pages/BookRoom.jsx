@@ -82,7 +82,7 @@ export default function BookRoom({ user, notice, goTo }) {
           <h3>Book {sel.name}</h3>
           <form className="formrow" onSubmit={submit}>
             <label>Guest name<input required value={name} onChange={(e) => setName(e.target.value)} /></label>
-            <label>Contact (phone/email)<input value={contact} onChange={(e) => setContact(e.target.value)} /></label>
+            <label>Contact (phone/email)<input required value={contact} onChange={(e) => setContact(e.target.value)} /></label>
             <button className="primary" disabled={busy}>{busy ? 'Sending…' : `Book · ${peso(sel.price_per_night * nights)}`}</button>
           </form>
         </div>

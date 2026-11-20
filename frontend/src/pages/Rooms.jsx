@@ -106,7 +106,7 @@ export default function Rooms({ user, notice, setHeaderAction }) {
                     <button onClick={() => setEditing(r)}>Edit</button>
                     <button className="danger" onClick={() => remove(r)}>Delete</button><button onClick={()=>setDetails(r)}>Details</button>
                   </>
-                ) : isGuest && !['maintenance','out_of_service'].includes(r.status) && (searched||r.status==='available') && (
+                ) : isGuest && !['maintenance','out_of_service'].includes(r.status) && (
                   <button className="primary" onClick={() => setBooking(r)}>Book now</button>
                 )}
                 {!isGuest&&!canManage&&r.status==='cleaning'&&user.permissions?.includes('rooms.operation')&&<button onClick={()=>markReady(r)}>Mark cleaned / ready</button>}
