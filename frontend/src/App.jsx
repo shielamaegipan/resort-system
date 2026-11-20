@@ -31,6 +31,16 @@ const findPage = (names, role) => {
   return null;
 };
 
+// Keep the logged-in user in the browser so a refresh does not send the person back to the login page.
+// It is checked against the server (/auth/me) right after the page loads.
+const USER_KEY = 'resort_user';
+const readUser = () => {
+  try { return API.getToken?.() ? JSON.parse(localStorage.getItem(USER_KEY)) : null; } catch { return null; }
+};
+const saveUser = (u) => {
+  try { if (u) localStorage.setItem(USER_KEY, JSON.stringify(u)); else localStorage.removeItem(USER_KEY); } catch { /* storage blocked */ }
+};
+
 // key, label, page file names to look for
 const MENUS = {
   admin: [
@@ -215,8 +225,11 @@ function FloatOnPress() {
 }
 
 export default function App() {
-  const [user, setUser] = useState(null);
-  const [page, setPage] = useState('home');
+  const [user, setUserState] = useState(readUser);
+  // Wait for the server check only when there is a token but no saved user, so the login page does not flash
+  const [booting, setBooting] = useState(() => !!API.getToken?.() && !readUser());
+  // The page comes from the address (#booking), so a refresh stays on the same page
+  const [page, setPage] = useState(() => window.location.hash.slice(1) || 'home');
   const [toast, setToast] = useState('');
   const [headerAction, setHeaderAction] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -224,10 +237,27 @@ export default function App() {
   const [related, setRelated] = useState(null);
   const [bookingFilter, setBookingFilter] = useState(null);
 
+  const setUser = useCallback((u) => { saveUser(u); setUserState(u); }, []);
   const notice = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(''), 3500); }, []);
 
-  // Always start on the login page
-  useEffect(() => { API.setToken?.(null); }, []);
+  // Keep the login after a refresh: check the saved token with the server.
+  // Only an expired or rejected token sends the person back to the login page.
+  useEffect(() => {
+    if (!API.getToken?.()) { saveUser(null); setBooting(false); return; }
+    API.api('/auth/me')
+      .then((r) => {
+        const fresh = r && (r.user || r);
+        if (fresh && fresh.role) setUser({ ...(readUser() || {}), ...fresh });
+        else { API.setToken(null); setUser(null); }
+      })
+      .catch((e) => { if (e.status === 401 || e.status === 403) { API.setToken(null); setUser(null); } })
+      .finally(() => setBooting(false));
+  }, [setUser]);
+
+  // Show the current page in the address, so refreshing (F5) opens the same page
+  useEffect(() => {
+    if (user) window.history.replaceState(null, '', '#' + page);
+  }, [user, page]);
 
   // Send bookings that were saved while offline
   useEffect(() => {
@@ -274,6 +304,7 @@ export default function App() {
     return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
   }, [user]);
 
+  if (!user && booting) return null;
   if (!user) {
     return <Login onLogin={(u, t) => { API.setToken(t); setUser(u); setPage(u.role === 'guest' ? 'home' : 'dashboard'); }} />;
   }
@@ -304,6 +335,7 @@ export default function App() {
     try { await PUSH.disablePushForSession(); }
     catch (error) { notice(`Could not disable this device's notifications: ${error.message}. Try logging out again.`); return; }
     API.setToken(null); setUser(null); setMenuOpen(false); setNotificationOpen(false); setRelated(null);
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
   };
 
   const Page = current?.Comp;
@@ -391,7 +423,7 @@ export default function App() {
 
   return employee ? (
     <AdminProvider key={user.id}>
-      <EmployeeSync user={user} onUser={(u) => { setUser(u); setPage('dashboard'); }} onLogout={logout} />
+      <EmployeeSync user={user} onUser={(u) => { setUser(u); if (u.role !== user.role) setPage('dashboard'); }} onLogout={logout} />
       {layout}
     </AdminProvider>
   ) : layout;
