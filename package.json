@@ -1,8 +1,11 @@
 {
-  "dependencies": {
-    "dotenv": "^18.0.10",
-    "express": "^5.3.0",
-    "mysql2": "^3.24.6",
-    "web-push": "^4.0.0"
-  }
+  "name": "resort-system",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "setup": "npm --prefix backend ci && npm --prefix frontend ci && node scripts/setup.cjs",
+    "dev": "node scripts/dev.cjs",
+    "build": "npm --prefix frontend run build"
+  },
+  "engines": { "node": ">=20" }
 }

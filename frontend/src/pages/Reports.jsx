@@ -1,10 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { Analytics } from '../features/Pages.jsx';
+import { useLiveRefresh } from '../features/live.js';
 import { api } from '../api.js';
 import { peso, LABEL } from './Bookings.jsx';
 
 export default function Reports({ notice }) {
   const [d, setD] = useState(null);
-  useEffect(() => { api('/reports/summary').then(setD).catch((e) => notice(e.message)); }, [notice]);
+  const [error,setError]=useState('');
+  const load=useCallback(()=>api('/reports/summary').then(data=>{setD(data);setError('');}).catch(e=>{setError(e.message);notice(e.message);}),[notice]);
+  useEffect(()=>{load();},[load]);
+  useLiveRefresh(load);
+  if(error&&!d)return <p role="alert" className="error">{error} <button onClick={load}>Retry</button></p>;
   if (!d) return <p className="muted">Loading…</p>;
 
   const total = Number(d.rooms.total) || 0;
@@ -16,11 +22,12 @@ export default function Reports({ notice }) {
       <div className="stats">
         {stat('Revenue (confirmed and up)', peso(d.revenue))}
         {stat('Bookings', d.bookings)}
-        {stat('Occupied today', `${d.occupied_today} / ${total} (${rate}%)`)}
+        {stat('Occupied today', `${d.occupied_today} / ${total} · ${rate}%`)}
         {stat('Rooms available', d.rooms.available ?? 0)}
         {stat('Staff accounts', d.users.staff ?? 0)}
         {stat('Guest accounts', d.users.guests ?? 0)}
       </div>
+      <details className="feature-options"><summary>Advanced reports and exports</summary><Analytics/></details>
       <div className="two-col">
         <div className="card pad">
           <h3>Bookings by status</h3>

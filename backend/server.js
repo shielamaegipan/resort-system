@@ -1,5 +1,9 @@
 require('dotenv').config();
 const express = require('express');
+require('express-async-errors');
+const validation = require('./lib/validation');
+const bookings = require('./lib/booking-service');
+const realtime = require('./lib/realtime');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -8,11 +12,15 @@ const bcrypt = require('bcryptjs');
 const { Server } = require('socket.io');
 const db = require('./db');
 const { auth, verifyToken } = require('./middleware/auth');
-const { router: pushRouter, notify } = require('./routes/push');
+const { requirePermission, audit, profile } = require('./lib/permissions');
+const { router: pushRouter } = require('./routes/push');
 
 const app = express();
 const server = http.createServer(app);
-const origin = process.env.CLIENT_ORIGIN || '*';
+const origins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173,http://127.0.0.1:5173').split(',').map(s=>s.trim());
+if (process.env.RAILWAY_PUBLIC_DOMAIN) origins.push(`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`);
+if (process.env.RENDER_EXTERNAL_URL) origins.push(new URL(process.env.RENDER_EXTERNAL_URL).origin);
+const origin = (value, callback) => callback(null, !value || origins.includes(value));
 
 if (!process.env.JWT_SECRET) console.warn('WARNING: JWT_SECRET is missing in backend/.env');
 process.on('unhandledRejection', (e) => console.error('Unhandled rejection:', e));
@@ -34,12 +42,51 @@ for (const method of ['get', 'post', 'put', 'patch', 'delete']) {
 
 app.use(cors({ origin }));
 app.use(express.json({ limit: '25mb' })); // raised so large base64 images fit
+app.use((req,res,next)=>{res.set('X-Content-Type-Options','nosniff'); if(req.path.startsWith('/api'))res.set('Cache-Control','no-store');next();});
+const attempts = new Map();
+const rateCleanup = setInterval(()=>{for(const [key,value] of attempts)if(value.until<Date.now())attempts.delete(key);},60000);rateCleanup.unref();
+app.use('/api/auth', (req,res,next)=>{
+  if(req.method!=='POST')return next();
+  const key=req.socket.remoteAddress,now=Date.now();let entry=attempts.get(key);
+  if(!entry||entry.until<now){entry={count:0,until:now+60000};attempts.set(key,entry);}
+  if(++entry.count>30)return res.status(429).json({error:'Too many authentication attempts. Try again in a minute.'});next();
+});
+// Apply permissions to legacy APIs as well as the new operations router.
+app.use('/api', (req,res,next)=>{
+  const match=/^\/(rooms|bookings|users|reports)(?:\/|$)/.exec(req.path);if(!match)return next();
+  const resource=match[1],read=req.method==='GET';
+  let permission=resource==='users'?'staff.manage':resource==='reports'?'reports.view':resource==='rooms'?(read?'rooms.view':req.method==='DELETE'?'rooms.archive':'rooms.manage'):(read?'bookings.view':'bookings.manage');
+  auth(req,res,()=>{
+    if(req.user.role==='guest'&&((resource==='rooms'&&read&&!req.path.includes('archived'))||(resource==='bookings'&&((read&&!req.path.includes('archived'))||req.method==='POST'&&req.path==='/bookings'||req.method==='PATCH'&&req.path.endsWith('/status')))))return next();
+    requirePermission(permission)(req,res,next).catch(next);
+  }).catch(next);
+});
 
 // Room images
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
+const UPLOAD_DIR = require('./lib/uploads').publicDir;
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 app.use('/uploads', express.static(UPLOAD_DIR));
 
+// Existing JSON response shapes are preserved. Successful writes invalidate Admin caches.
+app.use('/api', (req, res, next) => {
+  const match = /^\/(rooms|bookings|users)(?:\/(\d+))?(?:\/(status|restore|image|check-in|check-out))?$/.exec(req.path);
+  if (match && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    const send = res.json.bind(res);
+    res.json = (body) => {
+      if (res.statusCode >= 400) return send(body);
+      const category = match[1];
+      const action = match[3] === 'restore' ? 'restored' : req.method === 'DELETE' ? (category === 'users' ? 'deactivated' : 'archived') : req.method === 'POST' && !match[2] ? 'created' : 'updated';
+      const title = `${category === 'users' ? 'Staff account' : category === 'rooms' ? 'Room' : 'Booking'} ${action}`;
+      return realtime.publish(category, title, `${body.name || body.guest_name || '#' + (match[2] || body.id)}${body.status ? ' · ' + body.status.replaceAll('_', ' ') : ''}`, match[2] || body.id)
+        .catch((error) => console.error('Admin event failed:', error.message)).then(() => send(body));
+    };
+  }
+  next();
+});
+app.use('/api/admin', require('./routes/admin'));
+app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/ops', require('./routes/operations'));
+app.use('/api/advanced', require('./routes/advanced'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/push', pushRouter);
 
@@ -86,12 +133,13 @@ app.get('/api/rooms', auth, async (req, res) => {
 
 app.get('/api/rooms/available', auth, async (req, res) => {
   const { check_in, check_out, guests = 1 } = req.query;
-  if (!check_in || !check_out) return res.status(400).json({ error: 'Choose check-in and check-out dates' });
+  validation.dates(check_in, check_out);
+  validation.integer(guests, 'Guests');
   const [rows] = await db.query(
-    `SELECT * FROM rooms r WHERE r.deleted_at IS NULL AND r.status = 'available' AND r.capacity >= ?
+    `SELECT * FROM rooms r WHERE r.deleted_at IS NULL AND r.status NOT IN ('maintenance','out_of_service') AND (? > ? OR r.status='available') AND r.capacity >= ?
      AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.room_id = r.id AND b.deleted_at IS NULL
        AND b.status IN ('pending','confirmed','checked_in') AND b.check_in < ? AND b.check_out > ?)
-     ORDER BY r.id`, [Number(guests) || 1, check_out, check_in]
+     ORDER BY r.id`, [check_in,validation.today(),Number(guests) || 1, check_out, check_in]
   );
   res.json(rows);
 });
@@ -102,58 +150,73 @@ app.get('/api/rooms/archived', auth, allow('admin'), async (req, res) => {
 });
 
 app.post('/api/rooms', auth, allow('admin', 'staff'), async (req, res) => {
-  const { name, type = 'Standard', capacity = 2, price_per_night, description = '', status = 'available' } = req.body;
-  if (!name || price_per_night === '' || price_per_night == null) return res.status(400).json({ error: 'Name and price are required' });
-  const price = Math.round(Number(price_per_night)); // prices are whole numbers
-  if (!Number.isFinite(price) || price < 0) return res.status(400).json({ error: 'Price must be a number' });
-  const [r] = await db.query(
-    'INSERT INTO rooms (name, type, capacity, price_per_night, description, status) VALUES (?,?,?,?,?,?)',
-    [name, type, capacity, price, description, status]
-  );
-  const [[row]] = await db.query('SELECT * FROM rooms WHERE id = ?', [r.insertId]);
+  const data = validation.room(req.body);
+  const row=await bookings.transaction(async c=>{
+    const number=validation.roomNumber(req.body.room_number);
+    const [r] = await c.query('INSERT INTO rooms (name,type,capacity,price_per_night,description,amenities,status,room_number) VALUES (?,?,?,?,?,?,?,?)', [...Object.values(data),number]);
+    await audit(c,req.user,'rooms',r.insertId,'room_created',data.name);
+    const [[saved]]=await c.query('SELECT * FROM rooms WHERE id=?',[r.insertId]);return saved;
+  });
   res.status(201).json(row);
 });
 
 app.put('/api/rooms/:id', auth, allow('admin', 'staff'), async (req, res) => {
-  const { name, type, capacity, description, status } = req.body;
-  const price_per_night = req.body.price_per_night === '' || req.body.price_per_night == null ? null : Math.round(Number(req.body.price_per_night));
-  if (price_per_night !== null && (!Number.isFinite(price_per_night) || price_per_night < 0)) return res.status(400).json({ error: 'Price must be a number' });
-  await db.query(
-    `UPDATE rooms SET name = COALESCE(?, name), type = COALESCE(?, type), capacity = COALESCE(?, capacity),
-     price_per_night = COALESCE(?, price_per_night), description = COALESCE(?, description),
-     status = COALESCE(?, status) WHERE id = ? AND deleted_at IS NULL`,
-    [name, type, capacity, price_per_night, description, status, req.params.id]
-  );
-  const [[row]] = await db.query('SELECT * FROM rooms WHERE id = ?', [req.params.id]);
+  const row = await bookings.transaction(async (c) => {
+    const previous = await bookings.lockRoom(c, req.params.id);
+    if (previous.deleted_at) validation.fail(404, 'Room not found');
+    const data = validation.room(req.body, previous);
+    if(previous.status==='occupied'&&data.status!=='occupied')validation.fail(409,'Use guest check-out before changing occupied room readiness');
+    const [[reserved]] = await c.query(`SELECT COUNT(*) AS n,MAX(guests) AS guests FROM bookings
+      WHERE room_id=? AND deleted_at IS NULL AND status IN ('pending','confirmed','checked_in') AND check_out>?`, [req.params.id, validation.today()]);
+    if (Number(reserved.guests || 0) > data.capacity) validation.fail(409, 'Capacity cannot be lower than an active reservation guest count');
+    if (reserved.n && ['maintenance','out_of_service'].includes(data.status)) validation.fail(409, 'Resolve active reservations before taking the room out of service');
+    if (previous.status !== data.status && data.status === 'available') {
+      const [[issue]]=await c.query("SELECT id FROM maintenance_records WHERE room_id=? AND status='open' LIMIT 1",[previous.id]);if(issue)validation.fail(409,'Resolve maintenance issues before releasing this room');
+    }
+    await c.query('UPDATE rooms SET name=?,type=?,capacity=?,price_per_night=?,description=?,amenities=?,status=? WHERE id=?', [...Object.values(data), req.params.id]);
+    if(Object.hasOwn(req.body,'room_number'))await c.query('UPDATE rooms SET room_number=? WHERE id=?',[validation.roomNumber(req.body.room_number),previous.id]);
+    await audit(c,req.user,'rooms',previous.id,'room_updated',data.name);
+    const [[saved]] = await c.query('SELECT * FROM rooms WHERE id=?', [req.params.id]);
+    return saved;
+  });
   res.json(row);
 });
 
 app.post('/api/rooms/:id/image', auth, allow('admin', 'staff'), async (req, res) => {
+  const { saveImage,removeImage }=require('./lib/uploads');
+  let url;
   try {
-    const m = /^data:image\/(jpeg|jpg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(req.body.image || '');
-    if (!m) return res.status(400).json({ error: 'Invalid image. Use a JPG, PNG or WEBP file.' });
-    const [[room]] = await db.query('SELECT id, image_url FROM rooms WHERE id = ?', [req.params.id]);
-    if (!room) return res.status(404).json({ error: 'Room not found' });
-    const ext = m[1] === 'png' ? 'png' : m[1] === 'webp' ? 'webp' : 'jpg';
-    const file = `room-${room.id}-${Date.now()}.${ext}`;
-    fs.writeFileSync(path.join(UPLOAD_DIR, file), Buffer.from(m[2], 'base64'));
-    if (room.image_url) fs.unlink(path.join(UPLOAD_DIR, path.basename(room.image_url)), () => {});
-    const url = '/uploads/' + file;
-    await db.query('UPDATE rooms SET image_url = ? WHERE id = ?', [url, room.id]);
+    await bookings.transaction(async c=>{
+      const room=await bookings.lockRoom(c,req.params.id);if(room.deleted_at)validation.fail(404,'Room not found');
+      const [[count]]=await c.query('SELECT COUNT(*) n FROM room_images WHERE room_id=?',[room.id]);if(count.n>=12)validation.fail(400,'Maximum 12 photos per room');
+      url=await saveImage(req.body.image);
+      if(room.image_url)await c.query('INSERT INTO room_images(room_id,url) SELECT ?,? WHERE NOT EXISTS(SELECT 1 FROM room_images WHERE room_id=? AND url=?)',[room.id,room.image_url,room.id,room.image_url]);
+      await c.query('INSERT INTO room_images(room_id,url) VALUES (?,?)',[room.id,url]);
+      await c.query('UPDATE rooms SET image_url=? WHERE id=?',[url,room.id]);
+      await audit(c,req.user,'rooms',room.id,'photo_added');
+    });
     res.json({ image_url: url });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Could not save the image: ' + (e.code || e.message) });
+    await removeImage(url);throw e;
   }
 });
 
 app.delete('/api/rooms/:id', auth, allow('admin', 'staff'), async (req, res) => {
-  await db.query('UPDATE rooms SET deleted_at = NOW() WHERE id = ?', [req.params.id]);
+  await bookings.transaction(async (c) => {
+    const room = await bookings.lockRoom(c, req.params.id);
+    if (room.deleted_at) validation.fail(404, 'Room not found');
+    const [[reserved]] = await c.query(`SELECT COUNT(*) AS n FROM bookings WHERE room_id=? AND deleted_at IS NULL AND status IN ('pending','confirmed','checked_in') AND check_out>?`, [req.params.id, validation.today()]);
+    if (reserved.n) validation.fail(409, 'Resolve active reservations before archiving this room');
+    await c.query('UPDATE rooms SET deleted_at=NOW() WHERE id=?', [req.params.id]);
+    await audit(c,req.user,'rooms',room.id,'room_archived');
+  });
   res.json({ ok: true });
 });
 
 app.post('/api/rooms/:id/restore', auth, allow('admin'), async (req, res) => {
-  await db.query('UPDATE rooms SET deleted_at = NULL WHERE id = ?', [req.params.id]);
+  const [result] = await db.query('UPDATE rooms SET deleted_at=NULL WHERE id=? AND deleted_at IS NOT NULL', [req.params.id]);
+  if (!result.affectedRows) validation.fail(404, 'Archived room not found');
+  await audit(db,req.user,'rooms',req.params.id,'room_restored');
   res.json({ ok: true });
 });
 
@@ -174,67 +237,22 @@ app.get('/api/bookings/archived', auth, allow('admin'), async (req, res) => {
   res.json(rows);
 });
 
-app.post('/api/bookings', auth, allow('guest'), async (req, res) => {
-  const { room_id, guest_name, guest_contact = '', guests = 1, check_in, check_out } = req.body;
-  if (!room_id || !guest_name || !check_in || !check_out) {
-    return res.status(400).json({ error: 'Missing booking details' });
-  }
-  const nights = Math.round((new Date(check_out) - new Date(check_in)) / 86400000);
-  if (!(nights > 0)) return res.status(400).json({ error: 'Check-out must be after check-in' });
-
-  const [[room]] = await db.query(
-    "SELECT * FROM rooms WHERE id = ? AND deleted_at IS NULL AND status = 'available'", [room_id]
-  );
-  if (!room) return res.status(404).json({ error: 'This room is not available' });
-  if (Number(guests) > room.capacity) return res.status(400).json({ error: `This room fits up to ${room.capacity} guests only` });
-
-  const [[clash]] = await db.query(
-    `SELECT COUNT(*) AS n FROM bookings
-     WHERE room_id = ? AND deleted_at IS NULL AND status IN ('pending','confirmed','checked_in')
-       AND check_in < ? AND check_out > ?`,
-    [room_id, check_out, check_in]
-  );
-  if (clash.n > 0) return res.status(409).json({ error: 'This room is already booked for those dates' });
-
-  const total = nights * Number(room.price_per_night);
-  const [r] = await db.query(
-    `INSERT INTO bookings (user_id, room_id, guest_name, guest_contact, guests, check_in, check_out, total_price)
-     VALUES (?,?,?,?,?,?,?,?)`,
-    [req.user.id, room_id, guest_name, guest_contact, guests, check_in, check_out, total]
-  );
-  const [[row]] = await db.query(`${BOOKING_SELECT} WHERE b.id = ?`, [r.insertId]);
-  notify({ exceptUserId: req.user.id, roles: ['admin', 'staff'], title: 'New booking', body: `${guest_name} - ${room.name}` }).catch(console.error);
+app.post('/api/bookings', auth, allow('guest','admin','staff'), async (req, res) => {
+  const row = await bookings.create(req.user.id, req.body);
   res.status(201).json(row);
 });
 
 app.patch('/api/bookings/:id/status', auth, allow(), async (req, res) => {
-  const { status } = req.body;
-  const valid = ['pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled'];
-  if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' });
-
-  const [[b]] = await db.query('SELECT * FROM bookings WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
-  if (!b) return res.status(404).json({ error: 'Booking not found' });
-
-  if (req.user.role === 'guest') {
-    if (b.user_id !== req.user.id || status !== 'cancelled') {
-      return res.status(403).json({ error: 'You can only cancel your own booking' });
-    }
-    if (b.status !== 'pending') {
-      return res.status(403).json({ error: 'This booking is already confirmed. Please contact the front desk to change it.' });
-    }
-  }
-  await db.query('UPDATE bookings SET status = ? WHERE id = ?', [status, req.params.id]);
-  const [[row]] = await db.query(`${BOOKING_SELECT} WHERE b.id = ?`, [req.params.id]);
-  res.json(row);
+  res.json(await bookings.change(req.params.id, req.user, 'status', req.body.status));
 });
 
 app.delete('/api/bookings/:id', auth, allow('admin', 'staff'), async (req, res) => {
-  await db.query('UPDATE bookings SET deleted_at = NOW() WHERE id = ?', [req.params.id]);
+  await bookings.change(req.params.id, req.user, 'archive');
   res.json({ ok: true });
 });
 
 app.post('/api/bookings/:id/restore', auth, allow('admin'), async (req, res) => {
-  await db.query('UPDATE bookings SET deleted_at = NULL WHERE id = ?', [req.params.id]);
+  await bookings.change(req.params.id, req.user, 'restore');
   res.json({ ok: true });
 });
 
@@ -252,16 +270,12 @@ app.get('/api/bookings/today', auth, allow('staff'), async (req, res) => {
 // ---------- STAFF ACCOUNTS (admin only) ----------
 // The admin creates and manages staff accounts only. Guests register by themselves.
 app.get('/api/users', auth, allow('admin'), async (req, res) => {
-  const [rows] = await db.query("SELECT id, name, email, role, created_at FROM users WHERE role = 'staff' AND deleted_at IS NULL ORDER BY id");
+  const [rows] = await db.query("SELECT id, name, email, role, permission_role, created_at FROM users WHERE role = 'staff' AND deleted_at IS NULL ORDER BY id");
   res.json(rows);
 });
 
 app.post('/api/users', auth, allow('admin'), async (req, res) => {
-  const name = String(req.body.name || '').trim();
-  const email = String(req.body.email || '').trim().toLowerCase();
-  const password = String(req.body.password || '');
-  if (!name || !email || !password) return res.status(400).json({ error: 'Name, email and password are required' });
-  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  const { name, email, password } = validation.staff(req.body, true);
   const [[dup]] = await db.query('SELECT id FROM users WHERE email = ?', [email]);
   if (dup) return res.status(409).json({ error: 'Email is already used' });
   const hash = await bcrypt.hash(password, 10);
@@ -271,8 +285,11 @@ app.post('/api/users', auth, allow('admin'), async (req, res) => {
 });
 
 app.delete('/api/users/:id', auth, allow('admin'), async (req, res) => {
+  const [[target]]=await db.query('SELECT permission_role FROM users WHERE id=?',[req.params.id]);
+  if(target?.permission_role&&target.permission_role!=='receptionist')validation.fail(403,'Manage privileged accounts through the permission-aware staff API');
   const [r] = await db.query("UPDATE users SET deleted_at = NOW() WHERE id = ? AND role = 'staff' AND deleted_at IS NULL", [req.params.id]);
   if (!r.affectedRows) return res.status(404).json({ error: 'Staff account not found' });
+  realtime.revokeUser(req.params.id);
   res.json({ ok: true });
 });
 
@@ -318,9 +335,9 @@ app.get('/api/reports/summary', auth, allow('admin'), async (req, res) => {
      FROM bookings WHERE deleted_at IS NULL AND status IN ('confirmed','checked_in','checked_out')
      GROUP BY month ORDER BY month DESC LIMIT 12`
   );
-  const [[rooms]] = await db.query("SELECT COUNT(*) AS total, SUM(status='available') AS available FROM rooms WHERE deleted_at IS NULL");
+  const [[rooms]] = await db.query(`SELECT COUNT(*) AS total,COALESCE(SUM(r.status='available' AND NOT EXISTS(SELECT 1 FROM bookings b WHERE b.room_id=r.id AND b.deleted_at IS NULL AND (b.status='checked_in' OR (b.status IN ('pending','confirmed') AND b.check_in<=? AND b.check_out>?)))),0) AS available FROM rooms r WHERE r.deleted_at IS NULL`,[validation.today(),validation.today()]);
   const [[occ]] = await db.query(
-    "SELECT COUNT(DISTINCT room_id) AS occupied FROM bookings WHERE deleted_at IS NULL AND status = 'checked_in' AND check_in <= CURDATE() AND check_out > CURDATE()"
+    "SELECT COUNT(DISTINCT room_id) AS occupied FROM bookings WHERE deleted_at IS NULL AND status = 'checked_in'"
   );
   const [[usr]] = await db.query("SELECT SUM(role='staff') AS staff, SUM(role='guest') AS guests FROM users WHERE deleted_at IS NULL");
   res.json({ revenue: Number(rev.revenue), bookings: rev.bookings, byStatus, monthly, rooms, occupied_today: occ.occupied, users: usr });
@@ -420,8 +437,8 @@ app.post('/api/bookings/:id/check-in', auth, allow('staff', 'admin'), wrap(async
   if (!b.not_expired) return res.status(400).json({ error: 'This booking has already passed its check-out date' });
   const [[room]] = await db.query('SELECT status FROM rooms WHERE id = ? AND deleted_at IS NULL', [b.room_id]);
   if (!room) return res.status(400).json({ error: 'Room no longer exists' });
-  if (room.status === 'maintenance') return res.status(400).json({ error: 'The room is under maintenance' });
-  await db.query("UPDATE bookings SET status = 'checked_in' WHERE id = ?", [b.id]);
+  if (['maintenance', 'out_of_service'].includes(room.status)) return res.status(400).json({ error: 'The room is under maintenance' });
+  await bookings.change(req.params.id, req.user, 'status', 'checked_in');
   res.json(await getBill(b.id));
 }));
 
@@ -432,7 +449,7 @@ app.post('/api/bookings/:id/check-out', auth, allow('staff', 'admin'), wrap(asyn
   if (bill.balance > 0 && !req.body.allow_unpaid) {
     return res.status(409).json({ error: `Unpaid balance: ${bill.balance}. Collect cash payment first.`, balance: bill.balance, needs_payment: true });
   }
-  await db.query("UPDATE bookings SET status = 'checked_out' WHERE id = ?", [req.params.id]);
+  await bookings.change(req.params.id, req.user, 'status', 'checked_out');
   res.json(await getBill(req.params.id));
 }));
 
@@ -560,6 +577,7 @@ app.delete('/api/bookings/:id/services/:serviceRowId', auth, allow('staff', 'adm
 
 // ---------- Chat history ----------
 app.get('/api/messages', auth, allow('guest', 'staff'), async (req, res) => {
+  if(req.user.role==='staff'&&profile(req.user)!=='receptionist')return res.status(403).json({error:'Guest communication permission required'});
   const [rows] = await db.query(
     `SELECT m.id, m.content, m.created_at, m.sender_id, u.name AS sender_name
      FROM messages m JOIN users u ON u.id = m.sender_id
@@ -570,12 +588,14 @@ app.get('/api/messages', auth, allow('guest', 'staff'), async (req, res) => {
 
 // ---------- WebSocket real-time chat ----------
 const io = new Server(server, { cors: { origin } });
+realtime.attach(io);
 
 io.use(async (socket, next) => {
   try {
     socket.user = verifyToken(socket.handshake.auth.token);
-    const [[u]] = await db.query('SELECT role FROM users WHERE id = ? AND deleted_at IS NULL', [socket.user.id]);
+    const [[u]] = await db.query('SELECT role,permission_role,token_version FROM users WHERE id = ? AND deleted_at IS NULL', [socket.user.id]);
     if (!u || !['guest', 'staff'].includes(u.role)) return next(new Error('Chat is for guests and staff only'));
+    if((socket.user.version||0)!==u.token_version||(u.role==='staff'&&profile(u)!=='receptionist'))return next(new Error('Communication access denied'));
     socket.user.role = u.role;
     next();
   } catch {
@@ -584,9 +604,13 @@ io.use(async (socket, next) => {
 });
 
 io.on('connection', (socket) => {
+  const expiry=setTimeout(()=>socket.disconnect(true),Math.max(0,socket.user.exp*1000-Date.now()));socket.on('disconnect',()=>clearTimeout(expiry));
   socket.on('chat:send', async (content) => {
+    try {
+    const [[current]]=await db.query('SELECT * FROM users WHERE id=? AND deleted_at IS NULL',[socket.user.id]);
+    if(!current||(socket.user.version||0)!==current.token_version||(current.role!=='guest'&&profile(current)!=='receptionist'))return socket.disconnect(true);
     const text = String(content || '').trim();
-    if (!text) return;
+    if (!text||text.length>2000) return socket.emit('chat:error','Messages must contain 1–2000 characters');
     const [r] = await db.query('INSERT INTO messages (sender_id, content) VALUES (?, ?)', [socket.user.id, text]);
     io.emit('chat:receive', {
       id: r.insertId,
@@ -595,32 +619,30 @@ io.on('connection', (socket) => {
       sender_id: socket.user.id,
       sender_name: socket.user.name,
     });
-    notify({ exceptUserId: socket.user.id, roles: ['guest', 'staff'], title: socket.user.name, body: text }).catch(console.error);
+    realtime.publishChat(current, text, r.insertId).catch(error => console.error('Chat notification failed:', error.message));
+    } catch(error){console.error('Chat delivery failed:',error.message);socket.emit('chat:error','Message could not be sent');}
   });
 });
 
 // ---------- Error handler (e.g. image too large) ----------
+// Serve the production frontend from the API host, including direct page visits.
+const frontendDirectory = path.resolve(__dirname, '../frontend/dist');
+if (process.env.NODE_ENV === 'production' && fs.existsSync(path.join(frontendDirectory, 'index.html'))) {
+  app.use(express.static(frontendDirectory, { index: false }));
+  app.get('*', (req, res, next) => {
+    if (/^\/(api|uploads|socket\.io)(\/|$)/.test(req.path) || path.extname(req.path)) return next();
+    res.set('Cache-Control', 'no-cache').sendFile(path.join(frontendDirectory, 'index.html'));
+  });
+}
+
 app.use((err, req, res, next) => {
   if (err && err.type === 'entity.too.large') {
     return res.status(413).json({ error: 'The picture is too large. Please choose a smaller one.' });
   }
-  console.error(err);
-  res.status(err.status || 500).json({ error: err.message || 'Server error' });
+  const status = err.code === 'ER_DUP_ENTRY' ? 409 : err.status || (err.type === 'entity.parse.failed' ? 400 : 500);
+  if(status>=500)console.error('Request failed:',err.code||'INTERNAL_ERROR');
+  res.status(status).json({ error: err.code === 'ER_DUP_ENTRY' ? 'A record with this email or transaction reference already exists' : status < 500 ? err.message : 'Server error. Please try again.' });
 });
-
-// ---------- Auto-add the image_url column if it is missing ----------
-async function ensureImageColumn() {
-  const [cols] = await db.query("SHOW COLUMNS FROM rooms LIKE 'image_url'");
-  if (cols.length === 0) {
-    await db.query('ALTER TABLE rooms ADD COLUMN image_url VARCHAR(255) NULL AFTER description');
-    console.log('Added rooms.image_url column');
-  }
-}
-// ---------- Make existing room prices whole numbers ----------
-db.query('UPDATE rooms SET price_per_night = ROUND(price_per_night) WHERE price_per_night <> ROUND(price_per_night)')
-  .catch((e) => console.warn('price rounding skipped:', e.message));
-
-ensureImageColumn().catch((e) => console.warn('image_url check skipped:', e.message));
 
 // ---------- Seeds ----------
 async function seedUsers() {
@@ -636,16 +658,9 @@ async function seedUsers() {
       [name, email, hash, role]
     );
   }
-  // Rename the old default names in databases that were created earlier
-  await db.query("UPDATE users SET name = 'Admin' WHERE email = 'admin@resort.com' AND name = 'Resort Admin'");
-  await db.query("UPDATE users SET name = 'Staff' WHERE email = 'staff@resort.com' AND name = 'Front Desk Staff'");
-  await db.query("UPDATE users SET name = 'Guest' WHERE email = 'guest@resort.com' AND name = 'Sample Guest'");
-  // Repair the default admin account if it was demoted or archived by mistake
-  const [fix] = await db.query("UPDATE users SET role = 'admin', deleted_at = NULL WHERE email = 'admin@resort.com' AND (role <> 'admin' OR deleted_at IS NOT NULL)");
-  if (fix.affectedRows) console.log('Repaired the default admin account (role/archived state)');
   console.log('Default users ready');
 }
-seedUsers().catch((e) => console.warn('User seed skipped:', e.message));
+
 
 async function seedRooms() {
   const [[{ n }]] = await db.query('SELECT COUNT(*) AS n FROM rooms');
@@ -662,7 +677,7 @@ async function seedRooms() {
   );
   console.log('Seeded sample rooms');
 }
-seedRooms().catch((e) => console.warn('Room seed skipped:', e.message));
+
 
 // ---------- Auto-create the staff-feature tables (services, booking_services, payments) ----------
 async function ensureStaffTables() {
@@ -710,7 +725,16 @@ async function ensureStaffTables() {
     console.log('Seeded sample services');
   }
 }
-ensureStaffTables().catch((e) => console.warn('Staff tables setup failed:', e.message));
 
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));
+async function start() {
+  if(!process.env.JWT_SECRET || process.env.JWT_SECRET.length<24)throw new Error('Configure JWT_SECRET with at least 24 random characters');
+  await require('./migrate-admin')();
+  await require('./migrate-platform')();
+  await require('./migrate-advanced')();
+  await ensureStaffTables();
+  if(process.env.SEED_DEMO==='true'&&process.env.NODE_ENV!=='production'){await seedUsers();await seedRooms();}
+  require('./lib/reminders').start();
+  server.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));
+}
+start().catch((error) => { console.error('Startup failed:', error.message); process.exitCode = 1; db.end(); });

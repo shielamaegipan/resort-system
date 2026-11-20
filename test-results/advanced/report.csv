@@ -1,5 +1,5 @@
 ﻿"Resort operational report"
-"Period","2026-11-11","2026-11-11"
+"Period","2026-11-17","2026-11-17"
 "Currency","PHP"
 "Net revenue","2400"
 "Received","2500.5"
@@ -13,7 +13,7 @@
 "Registered guests","1"
 
 "Day","Net revenue","Received","Refunds"
-"2026-11-11","2400","2500.5","100.5"
+"2026-11-17","2400","2500.5","100.5"
 
 "Payment method","Received","Refunds","Net"
 "cash","2500.5","100.5","2400"

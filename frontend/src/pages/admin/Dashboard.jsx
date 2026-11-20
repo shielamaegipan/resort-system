@@ -23,7 +23,6 @@ export default function Dashboard() {
 
   return (
     <div style={s.page}>
-      <h1 style={s.title}>Dashboard</h1>
       <div style={s.grid}>
         <Stat label="Revenue this month" value={peso(d.month_revenue)} />
         <Stat label="Bookings this month" value={d.month_bookings} />
