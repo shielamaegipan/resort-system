@@ -144,6 +144,16 @@ app.get('/api/rooms/available', auth, async (req, res) => {
   res.json(rows);
 });
 
+// Booked date ranges of one room (dates only, no guest details)
+app.get('/api/rooms/:id/booked-dates', auth, async (req, res) => {
+  const roomId = validation.integer(req.params.id, 'Room ID', 2147483647);
+  const [rows] = await db.query(
+    `SELECT DATE_FORMAT(check_in,'%Y-%m-%d') AS check_in, DATE_FORMAT(check_out,'%Y-%m-%d') AS check_out
+     FROM bookings WHERE room_id=? AND deleted_at IS NULL AND status IN ('pending','confirmed','checked_in') AND check_out > CURDATE()
+     ORDER BY check_in`, [roomId]);
+  res.json(rows);
+});
+
 app.get('/api/rooms/archived', auth, allow('admin'), async (req, res) => {
   const [rows] = await db.query('SELECT * FROM rooms WHERE deleted_at IS NOT NULL ORDER BY id');
   res.json(rows);
