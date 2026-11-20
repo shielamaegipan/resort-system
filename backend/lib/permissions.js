@@ -7,6 +7,7 @@ const profiles = {
   operational_staff:['rooms.view','rooms.operation','maintenance.manage'], guest: []
 };
 function profile(user) { return user.permission_role || ({ admin: 'admin', staff: 'receptionist', guest: 'guest' }[user.role]); }
+function canChat(user) { return user.role === 'guest' || ['super_admin', 'admin', 'receptionist'].includes(profile(user)); }
 async function permissions(user, c = db) {
   const [rows] = await c.query('SELECT permission FROM role_permissions WHERE role_code=?', [profile(user)]);
   return rows.map(r => r.permission);
@@ -18,4 +19,4 @@ function requirePermission(permission) { return async (req, res, next) => {
 async function audit(c, user, type, id, action, details = '') {
   await c.query('INSERT INTO activity_logs(actor_id,entity_type,entity_id,action,details) VALUES (?,?,?,?,?)', [user.id, type, id || null, action, String(details).slice(0, 5000)]);
 }
-module.exports = { profiles, profile, permissions, requirePermission, audit };
+module.exports = { profiles, profile, canChat, permissions, requirePermission, audit };

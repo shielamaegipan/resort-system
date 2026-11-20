@@ -256,7 +256,12 @@ async function main(){
   chatSocket.emit('chat:send','Notification regression message');
   await waitFor(async()=> (await api('/notifications',staff)).data.items.some(item=>item.category==='chat'&&item.body==='Notification regression message'),'receptionist chat notification');
   check(true,'chat persists notification for authorized receptionist');
-  check(!(await api('/notifications',admin)).data.items.some(item=>item.category==='chat'),'admin receives no unauthorized chat notification');
+  await waitFor(async()=> (await api('/notifications',admin)).data.items.some(item=>item.category==='chat'&&item.body==='Notification regression message'),'admin chat notification');
+  check((await api('/messages',admin)).status===200,'admin can open chat history after receiving notification');
+  const adminChat=io(apiBase,{auth:{token:admin},transports:['websocket']});sockets.push(adminChat);await waitFor(()=>adminChat.connected,'admin chat connection');
+  adminChat.emit('chat:send','Admin reply regression');
+  await waitFor(async()=> (await api('/notifications',guest)).data.items.some(item=>item.category==='chat'&&item.body==='Admin reply regression'),'guest receives admin reply notification');
+  check(true,'admin reply notifies guest');
   check(!(await api('/notifications',guest)).data.items.some(item=>item.category==='chat'&&item.body==='Notification regression message'),'chat sender does not receive a duplicate self-notification');
   check(errors.length===0,`browser runtime errors: ${errors.join(', ')||'none'}`);
   const postmanLog=await new Promise((resolve,reject)=>{const p=spawn('postman',['collection','run',path.join(root,'postman/admin-smoke.postman_collection.json'),'--env-var',`baseUrl=${apiBase}`,'--env-var','adminPassword=admin123','--no-report-events'],{cwd:root,windowsHide:true,stdio:['ignore','pipe','pipe']});let log='';p.stdout.on('data',x=>log+=x);p.stderr.on('data',x=>log+=x);p.on('error',reject);p.on('exit',code=>code===0?resolve(log):reject(new Error(log)));});fs.writeFileSync(path.join(artifacts,'postman.txt'),postmanLog);check(true,'Postman regression collection passes against isolated API');

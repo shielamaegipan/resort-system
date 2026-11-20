@@ -12,7 +12,7 @@ const bcrypt = require('bcryptjs');
 const { Server } = require('socket.io');
 const db = require('./db');
 const { auth, verifyToken } = require('./middleware/auth');
-const { requirePermission, audit, profile } = require('./lib/permissions');
+const { requirePermission, audit, profile, canChat } = require('./lib/permissions');
 const { router: pushRouter } = require('./routes/push');
 
 const app = express();
@@ -576,8 +576,8 @@ app.delete('/api/bookings/:id/services/:serviceRowId', auth, allow('staff', 'adm
 }));
 
 // ---------- Chat history ----------
-app.get('/api/messages', auth, allow('guest', 'staff'), async (req, res) => {
-  if(req.user.role==='staff'&&profile(req.user)!=='receptionist')return res.status(403).json({error:'Guest communication permission required'});
+app.get('/api/messages', auth, async (req, res) => {
+  if(!canChat(req.user))return res.status(403).json({error:'Guest communication permission required'});
   const [rows] = await db.query(
     `SELECT m.id, m.content, m.created_at, m.sender_id, u.name AS sender_name
      FROM messages m JOIN users u ON u.id = m.sender_id
@@ -594,8 +594,8 @@ io.use(async (socket, next) => {
   try {
     socket.user = verifyToken(socket.handshake.auth.token);
     const [[u]] = await db.query('SELECT role,permission_role,token_version FROM users WHERE id = ? AND deleted_at IS NULL', [socket.user.id]);
-    if (!u || !['guest', 'staff'].includes(u.role)) return next(new Error('Chat is for guests and staff only'));
-    if((socket.user.version||0)!==u.token_version||(u.role==='staff'&&profile(u)!=='receptionist'))return next(new Error('Communication access denied'));
+    if (!u || !canChat(u)) return next(new Error('Guest communication access required'));
+    if((socket.user.version||0)!==u.token_version)return next(new Error('Communication access denied'));
     socket.user.role = u.role;
     next();
   } catch {
@@ -608,7 +608,7 @@ io.on('connection', (socket) => {
   socket.on('chat:send', async (content) => {
     try {
     const [[current]]=await db.query('SELECT * FROM users WHERE id=? AND deleted_at IS NULL',[socket.user.id]);
-    if(!current||(socket.user.version||0)!==current.token_version||(current.role!=='guest'&&profile(current)!=='receptionist'))return socket.disconnect(true);
+    if(!current||(socket.user.version||0)!==current.token_version||!canChat(current))return socket.disconnect(true);
     const text = String(content || '').trim();
     if (!text||text.length>2000) return socket.emit('chat:error','Messages must contain 1–2000 characters');
     const [r] = await db.query('INSERT INTO messages (sender_id, content) VALUES (?, ?)', [socket.user.id, text]);

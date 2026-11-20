@@ -1,7 +1,7 @@
 const { randomUUID } = require('crypto');
 const db = require('../db');
 const { verifyToken } = require('../middleware/auth');
-const { permissions } = require('./permissions');
+const { permissions, canChat } = require('./permissions');
 let namespace;
 let root;
 let notifications;
@@ -82,8 +82,8 @@ async function publish(category, title, body, entityId, eventId) {
 }
 async function publishChat(sender, content, messageId) {
   const event = { id: randomUUID(), category: 'chat', title: `Message from ${sender.name}`, body: String(content).slice(0,500), entityId: messageId };
-  const [users] = await db.query("SELECT * FROM users WHERE id<>? AND deleted_at IS NULL AND (role='guest' OR role='staff')", [sender.id]);
-  const recipients = users.filter(user => user.role === 'guest' || require('./permissions').profile(user) === 'receptionist');
+  const [users] = await db.query("SELECT * FROM users WHERE id<>? AND deleted_at IS NULL", [sender.id]);
+  const recipients = users.filter(canChat);
   for (const user of recipients) {
     await db.query('INSERT INTO admin_notifications(event_id,user_id,category,title,body,entity_id) VALUES (?,?,?,?,?,?)', [event.id,user.id,event.category,event.title,event.body,messageId]);
     notifications?.to(`user:${user.id}`).emit('notification:change', event);
