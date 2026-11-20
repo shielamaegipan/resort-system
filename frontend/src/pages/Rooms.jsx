@@ -97,7 +97,7 @@ export default function Rooms({ user, notice, setHeaderAction }) {
             {r.image_url ? <img src={r.image_url} alt={r.name} /> : <div className="nophoto">No photo</div>}
             <div className="body">
               <div className="row"><h3>{r.name}</h3><span className="price">{peso(r.price_per_night)}<small>/night</small></span></div>
-              <p className="rtype">{r.type}{r.status!=='available'&&<b className="pill warn">{r.status.replaceAll('_',' ')}</b>}</p>
+              <p className="rtype">{r.type}{!['available','occupied'].includes(r.status)&&<b className="pill warn">{r.status.replaceAll('_',' ')}</b>}</p>
               <p className="muted rcap">Up to {r.capacity} {Number(r.capacity) === 1 ? 'guest' : 'guests'}</p>
               <RoomDesc text={r.description} />
               <div className="actions">
