@@ -9,6 +9,7 @@ import Notifications, { EmployeeSync, NotificationRecord } from './features/Noti
 import { GuestNotificationBell, NotificationSession } from './features/notification-client.jsx';
 import AdminReports from './admin/AdminReports.jsx';
 import AdminActivity from './admin/AdminActivity.jsx';
+import { useConfirm } from './components/Confirm.jsx';
 
 /* Finds every page file by its name, so a missing page never crashes the app.
    (pages/admin/Name.jsx is preferred for the admin, then pages/Name.jsx) */
@@ -236,6 +237,7 @@ export default function App() {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [related, setRelated] = useState(null);
   const [bookingFilter, setBookingFilter] = useState(null);
+  const [ask, confirmDialog] = useConfirm();
 
   const setUser = useCallback((u) => { saveUser(u); setUserState(u); }, []);
   const notice = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(''), 3500); }, []);
@@ -338,6 +340,11 @@ export default function App() {
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
   };
 
+  const confirmLogout = async () => {
+    const ok = await ask({ title: 'Log out?', message: 'Are you sure you want to log out?', confirmText: 'Yes, log out', cancelText: 'No, stay logged in' });
+    if (ok) logout();
+  };
+
   const Page = current?.Comp;
   const pageEl = current?.extra
     ? current.key === 'activity' && role === 'admin' ? <AdminActivity/> : <FeaturePage page={current.key} user={user} goTo={goTo} />
@@ -372,7 +379,7 @@ export default function App() {
               </nav>
               <div className="top-me">
                 <strong>{user.name}</strong>
-                <button className="shell-logout" onClick={logout}>Log out</button>
+                <button className="shell-logout" onClick={confirmLogout}>Log out</button>
               </div>
             </div>
           </header>
@@ -393,7 +400,7 @@ export default function App() {
                 </button>
               ))}
             </nav>
-            <button className="side-logout side-logout-bottom" onClick={logout}>Log out</button>
+            <button className="side-logout side-logout-bottom" onClick={confirmLogout}>Log out</button>
           </aside>
           {menuOpen && <div className="side-scrim" onClick={() => setMenuOpen(false)} />}
           <div className="side-main">
@@ -417,7 +424,7 @@ export default function App() {
         </>
       )}
       {related && employee && <NotificationRecord record={related} user={user} onClose={() => setRelated(null)} goTo={goTo} />}
-      {toast && <div className="shell-toast" role="status">{toast}</div>}
+      {confirmDialog}{toast && <div className="shell-toast" role="status">{toast}</div>}
     </div>
   );
 
