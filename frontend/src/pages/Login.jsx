@@ -6,6 +6,7 @@ export default function Login({ onLogin }) {
   const [f, setF] = useState({ name: '', email: '', password: '' });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showPw, setShowPw] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
   const submit = async (e) => {
@@ -26,12 +27,33 @@ export default function Login({ onLogin }) {
         <h2>{mode === 'login' ? 'Welcome back' : 'Create a guest account'}</h2>
         {mode === 'register' && <label>Name<input value={f.name} onChange={set('name')} required /></label>}
         <label>Email<input type="email" value={f.email} onChange={set('email')} required /></label>
-        <label>Password<input type="password" autoComplete={mode==='login'?'current-password':'new-password'} minLength={mode==='register'?12:undefined} maxLength={72} value={f.password} onChange={set('password')} required /></label>
+        <label>Password
+          <span style={{ position: 'relative', display: 'block' }}>
+            <input
+              type={showPw ? 'text' : 'password'}
+              autoComplete={mode==='login'?'current-password':'new-password'}
+              minLength={mode==='register'?12:undefined}
+              maxLength={72}
+              value={f.password}
+              onChange={set('password')}
+              required
+              style={{ width: '100%', boxSizing: 'border-box', paddingRight: 64 }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPw((s) => !s)}
+              aria-label={showPw ? 'Hide password' : 'Show password'}
+              style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, color: 'inherit' }}
+            >
+              {showPw ? 'Hide' : 'Show'}
+            </button>
+          </span>
+        </label>
         {err && <p className="error">{err}</p>}
         <button className="primary" disabled={busy}>{mode === 'login' ? 'Log in' : 'Register'}</button>
         <p className="switch">
           {mode === 'login' ? 'New guest? ' : 'Already have an account? '}
-          <a href="#" onClick={(e) => { e.preventDefault(); setErr(''); setMode(mode === 'login' ? 'register' : 'login'); }}>{mode === 'login' ? 'Register' : 'Log in'}</a>
+          <a href="#" onClick={(e) => { e.preventDefault(); setErr(''); setShowPw(false); setMode(mode === 'login' ? 'register' : 'login'); }}>{mode === 'login' ? 'Register' : 'Log in'}</a>
         </p>
       </form>
     </div>
