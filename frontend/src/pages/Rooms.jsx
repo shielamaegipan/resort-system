@@ -184,7 +184,7 @@ function RoomForm({ room, onClose, onSaved, notice }) {
 
 function BookForm({ room, user, dates, onClose, notice }) {
   const [policies,setPolicies]=useState(null);
-  useEffect(()=>{api('/advanced/policies').then(setPolicies).catch(()=>{});},[]);
+  const [ranges,setRanges]=useState([]);useEffect(()=>{api('/advanced/policies').then(setPolicies).catch(()=>{});},[]);useEffect(()=>{api(`/rooms/${room.id}/booked-dates`).then(setRanges).catch(()=>{});},[room.id]);
   const [f, setF] = useState({ guest_name: user.name, guest_contact: '', special_requests:'', guests: dates.guests || 1, check_in: dates.check_in, check_out: dates.check_out });
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -193,7 +193,7 @@ function BookForm({ room, user, dates, onClose, notice }) {
   const submit = async (e) => {
     e.preventDefault();
     if(busy)return;
-    if (nights <= 0) return notice('Check-out must be after check-in');
+    if (nights <= 0) return notice('Check-out must be after check-in'); if (ranges.some((x) => f.check_in < x.check_out && f.check_out > x.check_in)) return notice('Those dates are already booked. Please choose other dates.');
     setBusy(true);
     try {
       const r = await createBooking({ ...f, room_id: room.id });
@@ -205,9 +205,9 @@ function BookForm({ room, user, dates, onClose, notice }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-        <h2>Book {room.name}</h2>
+        <h2>Book {room.name}</h2>{ranges.length > 0 && <div className="muted"><strong>Already booked:</strong>{ranges.map((x, i) => <div key={i}>{x.check_in} → {x.check_out}</div>)}<div>You can book any other dates.</div></div>}
         <label>Guest name<input value={f.guest_name} onChange={set('guest_name')} required /></label>
-        <label>Contact number<input value={f.guest_contact} onChange={set('guest_contact')} /></label>
+        <label>Contact number<input required value={f.guest_contact} onChange={set('guest_contact')} /></label>
         <div className="two">
           <label>Check-in<input type="date" min={today()} value={f.check_in} onChange={set('check_in')} required /></label>
           <label>Check-out<input type="date" min={f.check_in || today()} value={f.check_out} onChange={set('check_out')} required /></label>
