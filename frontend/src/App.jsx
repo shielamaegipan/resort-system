@@ -38,6 +38,7 @@ const MENUS = {
     ['rooms', 'Rooms', ['AdminRooms', 'Rooms']],
     ['bookings', 'Bookings', ['AdminBookings', 'Bookings']],
     ['users', 'Users', ['Users', 'AdminUsers']],
+    ['chat', 'Chat', ['Chat']],
     ['reports', 'Reports', ['Reports', 'AdminReports']],
   ],
   staff: [

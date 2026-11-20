@@ -6,3 +6,8 @@ dist/
 *.zip
 *.log
 .DS_Store
+
+uploads/
+private-uploads/
+test-results/
+.netlify/
