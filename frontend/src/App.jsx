@@ -71,6 +71,7 @@ const MENUS = {
     ['booking', 'Booking', ['BookRoom']],
     ['bookings', 'My Bookings', ['Bookings']],
     ['notifications', 'Notifications', ['GuestNotifications']],
+    ['profile', 'My Profile', ['GuestProfile']],
     ['chat', 'Chat', ['Chat']],
   ],
 };
@@ -349,7 +350,7 @@ export default function App() {
   const pageEl = current?.extra
     ? current.key === 'activity' && role === 'admin' ? <AdminActivity/> : <FeaturePage page={current.key} user={user} goTo={goTo} />
     : Page
-      ? <Page user={user} notice={notice} goTo={goTo} initialFilters={bookingFilter} setHeaderAction={setHeaderAction} />
+      ? <Page user={user} notice={notice} goTo={goTo} initialFilters={bookingFilter} setHeaderAction={setHeaderAction} onUser={setUser} />
       : <p>Nothing to show.</p>;
 
   // Guests turn on push notifications; admin and staff open the notifications panel
