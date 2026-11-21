@@ -268,7 +268,7 @@ export default function App() {
     const flush = API.flushPending || Object.values(offlineModules)[0]?.flushPending;
     if (!flush) return;
     const run = async () => {
-      try { const n = await flush(); if (n) { notice(`${n} offline booking(s) synced`); setPage('bookings'); } } catch { /* offline */ }
+      try { const n = await flush(); if (n) { notice(`${n} offline booking(s) synced`); setPage('bookings'); } if (flush.rejected) notice(`${flush.rejected} offline booking(s) were declined: ${flush.reason}`); } catch { /* offline */ }
     };
     run();
     window.addEventListener('online', run);

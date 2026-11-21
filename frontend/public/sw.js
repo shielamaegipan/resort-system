@@ -1,5 +1,5 @@
 // Service worker: offline shell, push notifications, background sync
-self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('install', (e) => { e.waitUntil(caches.open('resort-v1').then((c) => c.add('/')).catch(() => {})); self.skipWaiting(); });
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 
 self.addEventListener('fetch', (e) => {

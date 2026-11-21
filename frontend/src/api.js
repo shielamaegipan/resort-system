@@ -57,7 +57,7 @@ export async function createBooking(booking) {
 }
 
 export async function flushPending() {
-  let sent = 0;
+  let sent = 0; let rejected = 0; let reason = '';
   for (const b of await pendingBookings()) {
     const { localId, ...payload } = b;
     try {
@@ -65,9 +65,9 @@ export async function flushPending() {
       await removePending(localId);
       sent++;
     } catch (e) {
-      if (e.status) await removePending(localId); // rejected by the server (e.g. dates taken): drop it
+      if (e.status === 401 || e.status === 408 || e.status === 429 || e.status >= 500) break; else if (e.status) { await removePending(localId); rejected++; reason = e.message; } // 4xx: declined by the server (e.g. dates taken)
       else break; // still offline
     }
   }
-  return sent;
+  flushPending.rejected = rejected; flushPending.reason = reason; return sent;
 }
