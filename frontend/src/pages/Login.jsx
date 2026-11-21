@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 
 export default function Login({ onLogin }) {
@@ -7,16 +7,23 @@ export default function Login({ onLogin }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [showPw, setShowPw] = useState(false);
+  const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
+  useEffect(() => {
+    const on = () => setOnline(true), off = () => setOnline(false);
+    window.addEventListener('online', on); window.addEventListener('offline', off);
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+  }, []);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
   const submit = async (e) => {
     e.preventDefault();
     if(busy)return;
+    if (!navigator.onLine) { setErr('You are offline. Log in once while online. After that, you can use the app offline.'); return; }
     setErr(''); setBusy(true);
     try {
       const d = await api(`/auth/${mode}`, { method: 'POST', body: f });
       onLogin(d.user, d.token);
-    } catch (e2) { setErr(e2.message === 'Failed to fetch' ? 'Cannot reach the server' : e2.message); }
+    } catch (e2) { setErr(e2.status ? e2.message : 'Cannot reach the server. Check your internet connection and try again.'); }
     setBusy(false);
   };
 
@@ -24,7 +31,7 @@ export default function Login({ onLogin }) {
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
         <div className="brand dark"><img src="/icon.svg" alt="" width="36" height="36" /><span>Resort</span></div>
-        <h2>{mode === 'login' ? 'Welcome back' : 'Create a guest account'}</h2>
+        {!online && <p className="banner">You are offline. Logging in and registering need internet. If you already logged in on this device, open the app again and you will still be signed in.</p>}<h2>{mode === 'login' ? 'Welcome back' : 'Create a guest account'}</h2>
         {mode === 'register' && <label>Name<input value={f.name} onChange={set('name')} required /></label>}
         <label>Email<input type="email" value={f.email} onChange={set('email')} required /></label>
         <label>Password
